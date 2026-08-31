@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ShieldCheck, Users, User, MapPin, Store, BarChart3, FileText,
   CheckCircle2, XCircle, Trash2, Send, RefreshCw, Filter,
-  Clock, Zap, Camera, Eye, AlertTriangle
+  Clock, Zap, Camera, Eye, AlertTriangle, BookOpen, Plus
 } from "lucide-react";
 import { api } from "../api/http";
 
@@ -11,6 +11,7 @@ const TABS = [
   { id: "users", label: "Utilisateurs", icon: Users },
   { id: "reports", label: "Signalements", icon: MapPin },
   { id: "donations", label: "Dons & IA", icon: Store },
+  { id: "blog", label: "Blog & Articles", icon: BookOpen },
   { id: "fiscal", label: "Reçus Fiscaux", icon: FileText }
 ];
 
@@ -68,7 +69,6 @@ export function AdminPage() {
         ))}
       </div>
 
-      {/* Tab content */}
       {tab === "dashboard" && (
         <DashboardTab
           dashboard={dashboard}
@@ -80,6 +80,7 @@ export function AdminPage() {
       {tab === "users" && <UsersTab />}
       {tab === "reports" && <ReportsTab onChanged={loadDashboard} />}
       {tab === "donations" && <DonationsTab />}
+      {tab === "blog" && <AdminBlogTab />}
       {tab === "fiscal" && <FiscalTab />}
     </div>
   );
@@ -611,6 +612,167 @@ function FiscalTab() {
         {restaurants.length === 0 && (
           <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "16px 0" }}>
             Aucun restaurateur actif enregistré.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Blog Management Tab ──────────────────────────────────────────────────────
+function AdminBlogTab() {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  async function loadPosts() {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/blog");
+      setPosts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error loading blog posts:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadPosts(); }, []);
+
+  async function handleCreatePost(e) {
+    e.preventDefault();
+    setError("");
+    setCreating(true);
+    const form = new FormData(e.currentTarget);
+    const payload = Object.fromEntries(form.entries());
+
+    try {
+      await api.post("/blog", payload);
+      setShowForm(false);
+      loadPosts();
+    } catch (err) {
+      setError(err.response?.data?.message || "Erreur lors de la création de l'article.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleDeletePost(id) {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cet article du blog ?")) return;
+    try {
+      await api.delete(`/blog/${id}`);
+      loadPosts();
+    } catch (err) {
+      alert("Erreur lors de la suppression.");
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: "var(--color-text)" }}>Gestion du Blog Solid’Uni</h2>
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)", margin: "4px 0 0" }}>
+            Publiez et gérez les articles, actualités et retours d'expérience du réseau SOS CONNECT.
+          </p>
+        </div>
+        <button
+          className="btn-primary"
+          onClick={() => setShowForm((v) => !v)}
+          style={{ background: "var(--color-primary)", color: "#FFFFFF" }}
+        >
+          <Plus size={16} /> {showForm ? "Fermer le formulaire" : "Créer un article"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#FFFFFF", border: "1.5px solid var(--color-border-strong)", borderRadius: "var(--radius-lg)", padding: 24, boxShadow: "var(--shadow-card)" }}>
+          <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--color-text)" }}>Nouvel Article de Blog</h3>
+          <form onSubmit={handleCreatePost} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+              <label>
+                Titre de l'article *
+                <input name="title" required placeholder="ex: Maraudes d'hiver : Mobilisation générale..." />
+              </label>
+              <label>
+                Catégorie
+                <select name="category" defaultValue="Actualité">
+                  <option value="Actualité">Actualité</option>
+                  <option value="Action Terrain">Action Terrain</option>
+                  <option value="Commerces Solidaires">Commerces Solidaires</option>
+                  <option value="Sensibilisation">Sensibilisation</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label>
+                URL de l'image d'illustration
+                <input name="imageUrl" type="url" placeholder="https://images.unsplash.com/..." />
+              </label>
+              <label>
+                Nom de l'auteur
+                <input name="author" defaultValue="Équipe SOS CONNECT" />
+              </label>
+            </div>
+
+            <label>
+              Résumé court (accroche) *
+              <textarea name="summary" rows="2" required placeholder="Bref résumé de 2 à 3 phrases..." />
+            </label>
+
+            <label>
+              Contenu complet de l'article *
+              <textarea name="content" rows="6" required placeholder="Rédigez l'article complet ici..." />
+            </label>
+
+            {error && <p className="error">{error}</p>}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Annuler</button>
+              <button type="submit" className="btn-primary" disabled={creating} style={{ background: "var(--color-primary)", color: "#FFFFFF" }}>
+                {creating ? "Publication..." : "Publier l'article"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Articles List */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
+        {posts.map((post) => (
+          <div key={post._id} style={{ background: "#FFFFFF", border: "1.5px solid var(--color-border)", borderRadius: "var(--radius-lg)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            {post.imageUrl && (
+              <div style={{ position: "relative", height: 160, overflow: "hidden" }}>
+                <img src={post.imageUrl} alt={post.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <span style={{ position: "absolute", top: 10, left: 10, background: "var(--color-primary-deep)", color: "#FFFFFF", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: "var(--radius-full)" }}>
+                  {post.category}
+                </span>
+              </div>
+            )}
+            <div style={{ padding: 18, display: "flex", flexDirection: "column", flex: 1 }}>
+              <h4 style={{ fontSize: 16, fontWeight: 800, color: "var(--color-text)", margin: "0 0 6px" }}>{post.title}</h4>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "0 0 14px", flex: 1, lineHeight: 1.5 }}>
+                {post.summary}
+              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1px solid var(--color-border)", fontSize: 11, color: "var(--color-text-muted)" }}>
+                <span>Par {post.author || "Admin"} · {new Date(post.createdAt).toLocaleDateString("fr-FR")}</span>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePost(post._id)}
+                  style={{ color: "var(--color-emergency)", background: "var(--color-emergency-light)", border: "1px solid var(--color-emergency-border)", padding: "4px 8px", borderRadius: "var(--radius-sm)", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  <Trash2 size={13} /> Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {posts.length === 0 && !loading && (
+          <div style={{ color: "var(--color-text-muted)", padding: 24, background: "#FFFFFF", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border)", gridColumn: "span 2", textAlign: "center" }}>
+            Aucun article dans le blog pour le moment. Cliquez sur "Créer un article" ci-dessus pour publier le premier.
           </div>
         )}
       </div>

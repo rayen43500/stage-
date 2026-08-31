@@ -380,8 +380,8 @@ function ReportQueue({ reports, onSelect, onChanged }) {
             )}
 
             {report.pendingStatus?.status && (
-              <div style={{ fontSize: 11, background: "var(--color-green-light)", color: "var(--color-primary-dark)", border: "1px solid var(--color-border-strong)", padding: "3px 8px", borderRadius: "var(--radius-sm)", fontWeight: 600, margin: "4px 0" }}>
-                ⏳ Demande : {STATUS_LABELS[report.pendingStatus.status] || report.pendingStatus.status} (en attente admin)
+              <div style={{ fontSize: 11, background: "var(--color-green-light)", color: "var(--color-primary-dark)", border: "1px solid var(--color-border-strong)", padding: "3px 8px", borderRadius: "var(--radius-sm)", fontWeight: 600, margin: "4px 0", display: "flex", alignItems: "center", gap: 5 }}>
+                <Clock size={11} /> Demande : {STATUS_LABELS[report.pendingStatus.status] || report.pendingStatus.status} (en attente admin)
               </div>
             )}
 

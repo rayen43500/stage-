@@ -138,8 +138,8 @@ export function App() {
               <HeartHandshake size={22} color="white" />
             </div>
             <div>
-              <strong>SOS Link</strong>
-              <span>Île-de-France · Pilote</span>
+              <strong style={{ fontSize: 15, fontWeight: 900 }}>SOS CONNECT</strong>
+              <span style={{ fontSize: 10, fontWeight: 700 }}>By Solid’Uni</span>
             </div>
           </div>
           <nav>

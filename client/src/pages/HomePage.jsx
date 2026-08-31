@@ -79,7 +79,7 @@ export function HomePage({ user }) {
               marginBottom: 16
             }}
           >
-            <Sparkles size={12} /> SOS Link v1.1 · Île-de-France
+            <Sparkles size={12} /> SOS CONNECT · By Solid’Uni
           </span>
           <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, marginBottom: 8, letterSpacing: "-0.5px", color: "white" }}>
             Bonjour, {user.organizationName || user.email}
