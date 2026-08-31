@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  ShieldCheck, Users, MapPin, Store, BarChart3, FileText,
-  CheckCircle2, XCircle, Trash2, Send, RefreshCw, Filter
+  ShieldCheck, Users, User, MapPin, Store, BarChart3, FileText,
+  CheckCircle2, XCircle, Trash2, Send, RefreshCw, Filter,
+  Clock, Zap, Camera, Eye, AlertTriangle
 } from "lucide-react";
 import { api } from "../api/http";
 
@@ -13,21 +14,33 @@ const TABS = [
   { id: "fiscal", label: "Reçus Fiscaux", icon: FileText }
 ];
 
+const STATUS_LABELS = {
+  new: "Nouveau",
+  in_progress: "En cours",
+  resolved: "Résolu",
+  removed: "Retiré"
+};
+
 export function AdminPage() {
   const [tab, setTab] = useState("dashboard");
-  const [pending, setPending] = useState([]);
+  const [pendingOrgs, setPendingOrgs] = useState([]);
+  const [pendingReports, setPendingReports] = useState([]);
   const [dashboard, setDashboard] = useState(null);
 
   async function loadDashboard() {
-    const [{ data: stats }, { data: orgs }] = await Promise.all([
+    const [{ data: stats }, { data: orgs }, { data: statusReports }] = await Promise.all([
       api.get("/admin/dashboard"),
-      api.get("/admin/organizations/pending")
+      api.get("/admin/organizations/pending"),
+      api.get("/admin/reports/pending-status").catch(() => ({ data: [] }))
     ]);
     setDashboard(stats);
-    setPending(orgs);
+    setPendingOrgs(orgs);
+    setPendingReports(statusReports);
   }
 
   useEffect(() => { loadDashboard(); }, []);
+
+  const totalPending = pendingOrgs.length + pendingReports.length;
 
   return (
     <div className="admin-page">
@@ -48,17 +61,24 @@ export function AdminPage() {
           <button key={id} className={`admin-tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
             <Icon size={15} />
             {label}
-            {id === "dashboard" && pending.length > 0 && (
-              <span className="tab-badge">{pending.length}</span>
+            {id === "dashboard" && totalPending > 0 && (
+              <span className="tab-badge">{totalPending}</span>
             )}
           </button>
         ))}
       </div>
 
       {/* Tab content */}
-      {tab === "dashboard" && <DashboardTab dashboard={dashboard} pending={pending} onChanged={loadDashboard} />}
+      {tab === "dashboard" && (
+        <DashboardTab
+          dashboard={dashboard}
+          pendingOrgs={pendingOrgs}
+          pendingReports={pendingReports}
+          onChanged={loadDashboard}
+        />
+      )}
       {tab === "users" && <UsersTab />}
-      {tab === "reports" && <ReportsTab />}
+      {tab === "reports" && <ReportsTab onChanged={loadDashboard} />}
       {tab === "donations" && <DonationsTab />}
       {tab === "fiscal" && <FiscalTab />}
     </div>
@@ -66,18 +86,24 @@ export function AdminPage() {
 }
 
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
-function DashboardTab({ dashboard, pending, onChanged }) {
-  async function setStatus(id, status) {
+function DashboardTab({ dashboard, pendingOrgs, pendingReports, onChanged }) {
+  async function setOrgStatus(id, status) {
     await api.patch(`/admin/organizations/${id}/status`, { status });
+    onChanged();
+  }
+
+  async function handleConfirmReportStatus(reportId, action) {
+    await api.patch(`/reports/${reportId}/confirm-status`, { action });
     onChanged();
   }
 
   const stats = dashboard
     ? [
-        { label: "Utilisateurs", value: dashboard.users, icon: "👥" },
-        { label: "Signalements", value: dashboard.reports, icon: "📍" },
-        { label: "Résolus", value: dashboard.resolvedReports, icon: "✅" },
-        { label: "Dons déclarés", value: dashboard.donations, icon: "🥘" }
+        { label: "Utilisateurs", value: dashboard.users, icon: Users },
+        { label: "Signalements", value: dashboard.reports, icon: MapPin },
+        { label: "Résolus", value: dashboard.resolvedReports, icon: CheckCircle2 },
+        { label: "Statuts en attente", value: pendingReports.length, icon: Clock },
+        { label: "Dons déclarés", value: dashboard.donations, icon: Store }
       ]
     : [];
 
@@ -85,37 +111,104 @@ function DashboardTab({ dashboard, pending, onChanged }) {
     <>
       {/* Stats */}
       <div className="stats-grid">
-        {stats.map(({ label, value, icon }) => (
+        {stats.map(({ label, value, icon: Icon }) => (
           <div key={label} className="stat-card">
-            <div className="stat-icon" style={{ fontSize: 20 }}>{icon}</div>
+            <div className="stat-icon"><Icon size={18} /></div>
             <div className="stat-label">{label}</div>
             <div className="stat-value">{value ?? "—"}</div>
           </div>
         ))}
       </div>
 
-      {/* Pending validations */}
+      {/* Pending status change requests from associations */}
       <div className="admin-section">
-        <h2><ShieldCheck size={16} /> Comptes à valider ({pending.length})</h2>
-        {pending.length === 0 ? (
+        <h2><Clock size={16} /> Demandes de statut d'associations ({pendingReports.length})</h2>
+        {pendingReports.length === 0 ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>
+            <CheckCircle2 size={16} style={{ display: "inline", marginRight: 6 }} />
+            Aucun changement de statut en attente de confirmation admin.
+          </div>
+        ) : (
+          <div className="list-grid">
+            {pendingReports.map((report) => (
+              <div key={report._id} className="data-card" style={{ borderLeft: "4px solid #6366f1" }}>
+                <div className="data-card-body">
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <strong>
+                      {report.type === "individual" ? "Signalement individuel" : `Groupe · ${report.group?.peopleCount || "?"} pers.`}
+                    </strong>
+                    {report.isAnonymous && (
+                      <span style={{ fontSize: 10, background: "#e0e7ff", color: "#4338ca", border: "1px solid #c7d2fe", padding: "2px 7px", borderRadius: "var(--radius-full)", fontWeight: 700 }}>
+                        <Zap size={9} style={{ display: "inline", marginRight: 2 }} /> Anonyme
+                      </span>
+                    )}
+                    <span className={`urgency-badge ${report.urgency}`}>{report.urgency}</span>
+                  </div>
+
+                  <span style={{ fontSize: 13 }}>
+                    Statut actuel : <span className={`status-badge ${report.status}`}>{STATUS_LABELS[report.status] || report.status}</span>
+                    {" ➔ "}
+                    Demande de passage à : <strong style={{ color: "var(--brand-700)", background: "var(--brand-50)", padding: "2px 8px", borderRadius: 4 }}>
+                      {STATUS_LABELS[report.pendingStatus?.status] || report.pendingStatus?.status}
+                    </strong>
+                  </span>
+
+                  {report.comment && (
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0", fontStyle: "italic" }}>
+                      « {report.comment} »
+                    </p>
+                  )}
+
+                  {report.pendingStatus?.note && (
+                    <small style={{ color: "var(--text-muted)", display: "block" }}>
+                      Note de l'association : {report.pendingStatus.note}
+                    </small>
+                  )}
+
+                  <small style={{ color: "var(--text-muted)" }}>
+                    Demandé par : <strong>{report.pendingStatus?.requestedBy?.organizationName || "Association"}</strong> ({report.pendingStatus?.requestedBy?.email})
+                    {report.pendingStatus?.requestedAt && ` · ${new Date(report.pendingStatus.requestedAt).toLocaleString("fr-FR")}`}
+                  </small>
+                </div>
+                <div className="data-card-actions">
+                  <button className="btn-success" onClick={() => handleConfirmReportStatus(report._id, "approve")}>
+                    <CheckCircle2 size={14} /> Confirmer
+                  </button>
+                  <button className="btn-danger" onClick={() => handleConfirmReportStatus(report._id, "reject")}>
+                    <XCircle size={14} /> Refuser
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pending org validations */}
+      <div className="admin-section">
+        <h2><ShieldCheck size={16} /> Comptes d'organisations à valider ({pendingOrgs.length})</h2>
+        {pendingOrgs.length === 0 ? (
           <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "12px 0" }}>
             <CheckCircle2 size={16} style={{ display: "inline", marginRight: 6 }} />
             Aucun compte en attente de validation.
           </div>
         ) : (
           <div className="list-grid">
-            {pending.map((org) => (
+            {pendingOrgs.map((org) => (
               <div key={org._id} className="data-card">
                 <div className="data-card-body">
                   <strong>{org.organizationName || org.email}</strong>
-                  <span>{org.role === "association" ? "🤝 Association" : "🍽️ Restaurateur"} · {org.sirenSiret} · {org.email}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {org.role === "association" ? <ShieldCheck size={13} /> : <Store size={13} />}
+                    {org.role === "association" ? "Association" : "Restaurateur"} · {org.sirenSiret} · {org.email}
+                  </span>
                   {org.address && <small>{org.address}</small>}
                 </div>
                 <div className="data-card-actions">
-                  <button className="btn-success" onClick={() => setStatus(org._id, "active")}>
+                  <button className="btn-success" onClick={() => setOrgStatus(org._id, "active")}>
                     <CheckCircle2 size={14} /> Valider
                   </button>
-                  <button className="btn-danger" onClick={() => setStatus(org._id, "rejected")}>
+                  <button className="btn-danger" onClick={() => setOrgStatus(org._id, "rejected")}>
                     <XCircle size={14} /> Refuser
                   </button>
                 </div>
@@ -207,15 +300,18 @@ function UsersTab() {
 }
 
 // ─── Reports Tab ──────────────────────────────────────────────────────────────
-function ReportsTab() {
+function ReportsTab({ onChanged }) {
   const [reports, setReports] = useState([]);
-  const [filters, setFilters] = useState({ status: "", urgency: "", type: "" });
+  const [filters, setFilters] = useState({ status: "", urgency: "", type: "", pending: "", isAnonymous: "" });
+  const [previewImage, setPreviewImage] = useState(null);
 
   async function load() {
     const params = new URLSearchParams();
     if (filters.status) params.set("status", filters.status);
     if (filters.urgency) params.set("urgency", filters.urgency);
     if (filters.type) params.set("type", filters.type);
+    if (filters.pending) params.set("pending", filters.pending);
+    if (filters.isAnonymous) params.set("isAnonymous", filters.isAnonymous);
     const { data } = await api.get(`/admin/reports?${params}`);
     setReports(data);
   }
@@ -225,6 +321,19 @@ function ReportsTab() {
   async function deleteReport(id) {
     await api.delete(`/reports/${id}`);
     load();
+    if (onChanged) onChanged();
+  }
+
+  async function handleAdminSetStatus(reportId, newStatus) {
+    await api.patch(`/reports/${reportId}`, { status: newStatus });
+    load();
+    if (onChanged) onChanged();
+  }
+
+  async function handleConfirmReportStatus(reportId, action) {
+    await api.patch(`/reports/${reportId}/confirm-status`, { action });
+    load();
+    if (onChanged) onChanged();
   }
 
   return (
@@ -243,33 +352,104 @@ function ReportsTab() {
         </select>
         <select value={filters.urgency} onChange={(e) => setFilters((f) => ({ ...f, urgency: e.target.value }))}>
           <option value="">Toutes urgences</option>
-          <option value="red">🔴 Rouge</option>
-          <option value="yellow">🟡 Jaune</option>
-          <option value="green">🟢 Vert</option>
+          <option value="red">Rouge</option>
+          <option value="yellow">Jaune</option>
+          <option value="green">Vert</option>
         </select>
         <select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}>
           <option value="">Tous types</option>
           <option value="individual">Individuel</option>
           <option value="group">Groupe</option>
         </select>
+        <select value={filters.pending} onChange={(e) => setFilters((f) => ({ ...f, pending: e.target.value }))}>
+          <option value="">Toutes demandes</option>
+          <option value="true">Statut en attente admin</option>
+        </select>
+        <select value={filters.isAnonymous} onChange={(e) => setFilters((f) => ({ ...f, isAnonymous: e.target.value }))}>
+          <option value="">Tous créateurs</option>
+          <option value="true">Signalements rapides (Anonymes)</option>
+        </select>
       </div>
+
       <div className="list-grid">
         {reports.map((report) => (
-          <div key={report._id} className="data-card">
-            <div className="data-card-body">
-              <strong style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {report.type === "individual" ? "👤 Individuel" : `👥 Groupe · ${report.group?.peopleCount || "?"} pers.`}
+          <div key={report._id} className="data-card" style={{ alignItems: "flex-start", borderLeft: report.pendingStatus?.status ? "4px solid #6366f1" : undefined }}>
+            <div className="data-card-body" style={{ width: "100%" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <strong style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {report.type === "individual" ? <User size={14} /> : <Users size={14} />}
+                  {report.type === "individual" ? "Individuel" : `Groupe · ${report.group?.peopleCount || "?"} pers.`}
+                </strong>
+                {report.isAnonymous && (
+                  <span style={{ fontSize: 10, background: "#e0e7ff", color: "#4338ca", border: "1px solid #c7d2fe", padding: "2px 7px", borderRadius: "var(--radius-full)", fontWeight: 700 }}>
+                    <Zap size={9} style={{ display: "inline", marginRight: 2 }} /> Anonyme
+                  </span>
+                )}
                 <span className={`urgency-badge ${report.urgency}`}>
-                  {report.urgency === "red" ? "🔴" : report.urgency === "yellow" ? "🟡" : "🟢"} {report.urgency}
+                  <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: report.urgency === "red" ? "var(--red-500)" : report.urgency === "yellow" ? "var(--yellow-500)" : "var(--green-500)" }} />
+                  {report.urgency}
                 </span>
-              </strong>
-              <span>
-                <span className={`status-badge ${report.status}`}>{report.status}</span>
-                {" · "}
-                {report.needs?.join(", ") || "Aucun besoin"}
-              </span>
-              <small>{new Date(report.createdAt).toLocaleString("fr-FR")} · Par {report.createdBy?.email}</small>
+              </div>
+
+              {/* Description */}
+              {report.comment && (
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0", fontStyle: "italic" }}>
+                  « {report.comment} »
+                </p>
+              )}
+
+              {/* Photo thumbnail */}
+              {report.imageUrl && (
+                <div style={{ marginTop: 4, marginBottom: 4 }}>
+                  <img
+                    src={report.imageUrl}
+                    alt="Miniature"
+                    onClick={() => setPreviewImage(report.imageUrl)}
+                    style={{ maxHeight: 65, borderRadius: 4, border: "1px solid var(--border)", cursor: "pointer" }}
+                  />
+                </div>
+              )}
+
+              {/* Status & Change select */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Statut actuel :</span>
+                <select
+                  value={report.status}
+                  onChange={(e) => handleAdminSetStatus(report._id, e.target.value)}
+                  style={{ fontSize: 12, padding: "3px 8px", borderRadius: "var(--radius-sm)", border: "1.5px solid var(--border)", fontWeight: 700 }}
+                >
+                  <option value="new">Nouveau</option>
+                  <option value="in_progress">En cours</option>
+                  <option value="resolved">Résolu</option>
+                  <option value="removed">Retiré</option>
+                </select>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>· Besoins : {report.needs?.join(", ") || "Aucun"}</span>
+              </div>
+
+              {/* Pending confirmation notice & 1-click actions */}
+              {report.pendingStatus?.status && (
+                <div style={{ background: "var(--color-green-light)", border: "1px solid var(--color-border-strong)", padding: "8px 12px", borderRadius: "var(--radius-sm)", marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--color-primary-dark)", display: "flex", alignItems: "center", gap: 5 }}>
+                    <Clock size={13} style={{ color: "var(--color-primary)" }} /> Demande association : passer à <strong>{STATUS_LABELS[report.pendingStatus.status] || report.pendingStatus.status}</strong>
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button className="btn-success" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => handleConfirmReportStatus(report._id, "approve")}>
+                      <CheckCircle2 size={12} /> Valider
+                    </button>
+                    <button className="btn-danger" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => handleConfirmReportStatus(report._id, "reject")}>
+                      <XCircle size={12} /> Rejeter
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <small style={{ marginTop: 4 }}>
+                {new Date(report.createdAt).toLocaleString("fr-FR")}
+                {report.createdBy?.email ? ` · Par ${report.createdBy.email}` : " · Signalement anonyme"}
+                {report.addressHint && ` · ${report.addressHint}`}
+              </small>
             </div>
+
             <div className="data-card-actions">
               <button className="btn-danger" style={{ padding: "7px 10px" }} onClick={() => deleteReport(report._id)}>
                 <Trash2 size={14} />
@@ -278,6 +458,20 @@ function ReportsTab() {
           </div>
         ))}
       </div>
+
+      {/* Image preview modal */}
+      {previewImage && (
+        <div className="modal-overlay" onClick={() => setPreviewImage(null)}>
+          <div className="modal-box" style={{ maxWidth: 700, padding: 12, background: "#111", textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="btn-secondary" style={{ padding: "4px 8px", color: "white", borderColor: "#444" }} onClick={() => setPreviewImage(null)}>
+                Fermer
+              </button>
+            </div>
+            <img src={previewImage} alt="Aperçu" style={{ maxWidth: "100%", maxHeight: "75vh", objectFit: "contain", borderRadius: 6 }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -310,7 +504,9 @@ function DonationsTab() {
       <div className="list-grid">
         {donations.map((donation) => (
           <div key={donation._id} className="data-card" style={{ alignItems: "flex-start" }}>
-            <div style={{ fontSize: 28, flexShrink: 0 }}>🥘</div>
+            <div className="stat-icon" style={{ flexShrink: 0 }}>
+              <Store size={18} />
+            </div>
             <div className="data-card-body">
               <strong>{donation.description}</strong>
               <span>
@@ -383,15 +579,19 @@ function FiscalTab() {
           return (
             <div key={r._id} className="data-card">
               <div className="data-card-body">
-                <strong>🍽️ {r.organizationName || r.email}</strong>
+                <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Store size={14} /> {r.organizationName || r.email}
+                </strong>
                 <span>{r.email} {r.sirenSiret ? `· SIRET: ${r.sirenSiret}` : ""}</span>
                 {res && res.ok && (
-                  <small style={{ color: "var(--brand-500)", fontWeight: 700 }}>
-                    ✅ Reçu envoyé · {res.count} dons · {res.total} EUR
+                  <small style={{ color: "var(--brand-500)", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+                    <CheckCircle2 size={13} /> Reçu envoyé · {res.count} dons · {res.total} EUR
                   </small>
                 )}
                 {res && !res.ok && (
-                  <small style={{ color: "var(--red-500)" }}>❌ {res.error}</small>
+                  <small style={{ color: "var(--red-500)", display: "flex", alignItems: "center", gap: 5 }}>
+                    <XCircle size={13} /> {res.error}
+                  </small>
                 )}
               </div>
               <div className="data-card-actions">

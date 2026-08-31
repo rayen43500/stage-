@@ -11,14 +11,15 @@ router.use(auth, requireRole("admin"));
 
 // Global dashboard stats
 router.get("/dashboard", async (req, res) => {
-  const [users, pendingOrganizations, reports, donations, resolvedReports] = await Promise.all([
+  const [users, pendingOrganizations, reports, donations, resolvedReports, pendingStatusReports] = await Promise.all([
     User.countDocuments({ deletedAt: { $exists: false } }),
     User.countDocuments({ role: { $in: ["association", "restaurant"] }, status: "pending" }),
     Report.countDocuments(),
     FoodDonation.countDocuments(),
-    Report.countDocuments({ status: "resolved" })
+    Report.countDocuments({ status: "resolved" }),
+    Report.countDocuments({ "pendingStatus.status": { $exists: true } })
   ]);
-  res.json({ users, pendingOrganizations, reports, resolvedReports, donations });
+  res.json({ users, pendingOrganizations, reports, resolvedReports, donations, pendingStatusReports });
 });
 
 // Pending organizations (associations + restaurants awaiting validation)
@@ -28,6 +29,16 @@ router.get("/organizations/pending", async (req, res) => {
     status: "pending"
   }).select("-passwordHash");
   res.json(users);
+});
+
+// Get reports with pending status change requests from associations
+router.get("/reports/pending-status", async (req, res) => {
+  const reports = await Report.find({ "pendingStatus.status": { $exists: true } })
+    .sort({ "pendingStatus.requestedAt": -1 })
+    .populate("assignedAssociations", "organizationName email phone")
+    .populate("createdBy", "organizationName email")
+    .populate("pendingStatus.requestedBy", "organizationName email");
+  res.json(reports);
 });
 
 // Validate or reject organization
@@ -70,15 +81,19 @@ router.delete("/users/:id", async (req, res) => {
 
 // Get all reports (admin view with optional filters)
 router.get("/reports", async (req, res) => {
-  const { status, urgency, type } = req.query;
+  const { status, urgency, type, isAnonymous, pending } = req.query;
   const filter = {};
   if (status) filter.status = status;
   if (urgency) filter.urgency = urgency;
   if (type) filter.type = type;
+  if (isAnonymous === "true") filter.isAnonymous = true;
+  if (pending === "true") filter["pendingStatus.status"] = { $exists: true };
+
   const reports = await Report.find(filter)
     .sort({ createdAt: -1 })
-    .populate("assignedAssociations", "organizationName email")
-    .populate("createdBy", "email");
+    .populate("assignedAssociations", "organizationName email phone")
+    .populate("createdBy", "organizationName email")
+    .populate("pendingStatus.requestedBy", "organizationName email");
   res.json(reports);
 });
 

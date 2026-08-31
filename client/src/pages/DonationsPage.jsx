@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   HandCoins, PackageCheck, Mail, Calendar, Euro,
-  ChevronDown, ChevronUp, Lock, Info, TrendingUp
+  ChevronDown, ChevronUp, Lock, Info, TrendingUp, Store, Camera
 } from "lucide-react";
 import { api } from "../api/http";
 
@@ -145,8 +145,8 @@ function DonationCard({ donation, user, onChanged }) {
             onError={(e) => { e.target.style.display = "none"; }}
           />
         ) : (
-          <div style={{ width: 60, height: 60, borderRadius: "var(--radius-md)", background: "var(--surface-subtle)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 24 }}>
-            🥘
+          <div style={{ width: 60, height: 60, borderRadius: "var(--radius-md)", background: "var(--surface-subtle)", color: "var(--brand-500)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <PackageCheck size={24} />
           </div>
         )}
         <div className="data-card-body">
@@ -183,7 +183,9 @@ function DonationCard({ donation, user, onChanged }) {
           {/* Restaurateur info (for associations) */}
           {(user.role === "association" || user.role === "admin") && donation.restaurant && (
             <div className="assoc-chip">
-              <strong>🏪 {donation.restaurant.organizationName || donation.restaurant.email}</strong>
+              <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Store size={14} /> {donation.restaurant.organizationName || donation.restaurant.email}
+              </strong>
               <a href={`mailto:${donation.restaurant.email}`} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, color: "var(--brand-500)", fontSize: 12 }}>
                 <Mail size={12} /> {donation.restaurant.email}
               </a>
@@ -287,7 +289,9 @@ function DonationForm({ onCreated }) {
       )}
       {!photoUrl && (
         <div className="photo-preview">
-          <span>📷 Aucune photo sélectionnée</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Camera size={15} /> Aucune photo sélectionnée
+          </span>
         </div>
       )}
 

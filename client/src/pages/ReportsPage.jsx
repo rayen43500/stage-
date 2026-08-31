@@ -3,7 +3,8 @@ import { MapContainer, Marker, Popup, TileLayer, Circle, useMapEvents } from "re
 import L from "leaflet";
 import {
   AlertTriangle, CheckCircle2, Plus, X, Filter, Phone, Heart,
-  User, Users, MapPin, Clock, ChevronRight, CheckSquare, BarChart3
+  User, Users, MapPin, Clock, ChevronRight, CheckSquare, BarChart3,
+  Zap, Camera, ShieldCheck, XCircle, Eye
 } from "lucide-react";
 import { api } from "../api/http";
 
@@ -17,13 +18,23 @@ const NEEDS_LABELS = {
   other: "Autre"
 };
 
+const STATUS_LABELS = {
+  new: "Nouveau",
+  in_progress: "En cours",
+  resolved: "Résolu",
+  removed: "Retiré"
+};
+
 const NEEDS = Object.keys(NEEDS_LABELS);
 
 // Custom Leaflet marker icons based on urgency and type
 function createMarkerIcon(urgency, type) {
-  const colors = { green: "#22c55e", yellow: "#eab308", red: "#ef4444" };
-  const bg = colors[urgency] || "#6b7280";
-  const emoji = type === "group" ? "👥" : "🙋";
+  const colors = { green: "#159A78", yellow: "#08745A", red: "#DC2626" };
+  const bg = colors[urgency] || "#159A78";
+  const icon =
+    type === "group"
+      ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+      : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
   return L.divIcon({
     className: "",
     html: `<div style="
@@ -34,7 +45,7 @@ function createMarkerIcon(urgency, type) {
       transform:rotate(-45deg);
       box-shadow:0 2px 8px rgba(0,0,0,0.25);
       display:flex;align-items:center;justify-content:center;
-    "><span style="transform:rotate(45deg);font-size:13px;">${emoji}</span></div>`,
+    "><span style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;">${icon}</span></div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 36],
     popupAnchor: [0, -38]
@@ -49,6 +60,45 @@ function MapClickHandler({ onClick }) {
     }
   });
   return null;
+}
+
+function TypeLabel({ report, type, count }) {
+  const isGroup = (report?.type || type) === "group";
+  const peopleCount = report?.group?.peopleCount || count;
+  const Icon = isGroup ? Users : User;
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <Icon size={13} />
+      {isGroup ? `Groupe${peopleCount ? ` · ${peopleCount} pers.` : ""}` : "Individuel"}
+      {report?.isAnonymous && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "var(--color-green-light)", color: "var(--color-primary-dark)", border: "1px solid var(--color-border-strong)", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--radius-full)" }}>
+          <Zap size={9} /> Rapide
+        </span>
+      )}
+    </span>
+  );
+}
+
+function UrgencyLabel({ urgency, withText = false }) {
+  const labels = { red: "Urgent", yellow: "Important", green: "Stable" };
+  const colors = { red: "#DC2626", yellow: "#08745A", green: "#159A78" };
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: colors[urgency] || "var(--text-muted)",
+          boxShadow: "0 0 0 2px rgba(255,255,255,0.65)"
+        }}
+      />
+      {withText ? labels[urgency] || urgency : urgency}
+    </span>
+  );
 }
 
 export function ReportsPage({ user }) {
@@ -124,9 +174,9 @@ export function ReportsPage({ user }) {
           </select>
           <select value={filters.urgency} onChange={(e) => setFilters((f) => ({ ...f, urgency: e.target.value }))}>
             <option value="">Toutes urgences</option>
-            <option value="red">🔴 Rouge (critique)</option>
-            <option value="yellow">🟡 Jaune (important)</option>
-            <option value="green">🟢 Vert (stable)</option>
+            <option value="red">Rouge (critique)</option>
+            <option value="yellow">Jaune (important)</option>
+            <option value="green">Vert (stable)</option>
           </select>
           <select value={filters.needs} onChange={(e) => setFilters((f) => ({ ...f, needs: e.target.value }))}>
             <option value="">Tous les besoins</option>
@@ -164,14 +214,28 @@ export function ReportsPage({ user }) {
                   <div style={{ minWidth: 200 }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
                       <span className={`urgency-badge ${report.urgency}`}>
-                        {report.urgency === "red" ? "🔴" : report.urgency === "yellow" ? "🟡" : "🟢"}
-                        {report.urgency}
+                        <UrgencyLabel urgency={report.urgency} />
                       </span>
-                      <span className={`status-badge ${report.status}`}>{report.status}</span>
+                      <span className={`status-badge ${report.status}`}>{STATUS_LABELS[report.status] || report.status}</span>
+                      {report.pendingStatus?.status && (
+                        <span style={{ fontSize: 10, background: "var(--color-green-light)", color: "var(--color-primary-dark)", border: "1px solid var(--color-border-strong)", padding: "2px 6px", borderRadius: 4, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <Clock size={10} /> En attente admin
+                        </span>
+                      )}
                     </div>
                     <strong style={{ display: "block", marginBottom: 4, fontSize: 13 }}>
-                      {report.type === "individual" ? "👤 Individuel" : `👥 Groupe${report.group?.peopleCount ? ` · ${report.group.peopleCount} pers.` : ""}`}
+                      <TypeLabel report={report} />
                     </strong>
+                    {report.comment && (
+                      <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 6px", fontStyle: "italic" }}>
+                        « {report.comment} »
+                      </p>
+                    )}
+                    {report.imageUrl && (
+                      <div style={{ marginBottom: 6 }}>
+                        <img src={report.imageUrl} alt="Aperçu" style={{ width: "100%", maxHeight: 90, objectFit: "cover", borderRadius: 4 }} />
+                      </div>
+                    )}
                     {report.needs?.length > 0 && (
                       <div className="needs-grid" style={{ marginBottom: 6 }}>
                         {report.needs.map((n) => (
@@ -238,19 +302,24 @@ function CitizenPanel({ reports, onOpenForm }) {
           <div key={report._id} className="mini-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <strong style={{ fontSize: 13 }}>
-                {report.type === "individual" ? "👤 Individuel" : `👥 Groupe · ${report.group?.peopleCount || "?"} pers.`}
+                <TypeLabel report={report} count={report.group?.peopleCount || "?"} />
               </strong>
               <span className={`urgency-badge ${report.urgency}`}>
-                {report.urgency === "red" ? "🔴" : report.urgency === "yellow" ? "🟡" : "🟢"} {report.urgency}
+                <UrgencyLabel urgency={report.urgency} />
               </span>
             </div>
+            {report.comment && (
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0", fontStyle: "italic" }}>
+                « {report.comment} »
+              </p>
+            )}
             {report.needs?.length > 0 && (
               <div className="needs-grid">
                 {report.needs.map((n) => <span key={n} className="need-chip">{NEEDS_LABELS[n]}</span>)}
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-              <span className={`status-badge ${report.status}`}>{report.status}</span>
+              <span className={`status-badge ${report.status}`}>{STATUS_LABELS[report.status] || report.status}</span>
               <small className="text-muted">{new Date(report.createdAt).toLocaleDateString("fr-FR")}</small>
             </div>
           </div>
@@ -280,12 +349,25 @@ function ReportQueue({ reports, onSelect, onChanged }) {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <strong style={{ fontSize: 13 }}>
-                {report.type === "individual" ? "👤 Individuel" : `👥 Groupe · ${report.group?.peopleCount || "?"} pers.`}
+                <TypeLabel report={report} count={report.group?.peopleCount || "?"} />
               </strong>
               <span className={`urgency-badge ${report.urgency}`}>
-                {report.urgency === "red" ? "🔴" : report.urgency === "yellow" ? "🟡" : "🟢"}
+                <UrgencyLabel urgency={report.urgency} />
               </span>
             </div>
+
+            {report.comment && (
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 6px", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                « {report.comment} »
+              </p>
+            )}
+
+            {report.imageUrl && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--brand-600)", margin: "2px 0 6px" }}>
+                <Camera size={12} /> Photo jointe
+              </div>
+            )}
+
             {report.needs?.length > 0 && (
               <div className="needs-grid">
                 {report.needs.slice(0, 3).map((n) => (
@@ -296,8 +378,15 @@ function ReportQueue({ reports, onSelect, onChanged }) {
                 {report.needs.length > 3 && <span className="need-chip">+{report.needs.length - 3}</span>}
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span className={`status-badge ${report.status}`}>{report.status}</span>
+
+            {report.pendingStatus?.status && (
+              <div style={{ fontSize: 11, background: "var(--color-green-light)", color: "var(--color-primary-dark)", border: "1px solid var(--color-border-strong)", padding: "3px 8px", borderRadius: "var(--radius-sm)", fontWeight: 600, margin: "4px 0" }}>
+                ⏳ Demande : {STATUS_LABELS[report.pendingStatus.status] || report.pendingStatus.status} (en attente admin)
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+              <span className={`status-badge ${report.status}`}>{STATUS_LABELS[report.status] || report.status}</span>
               <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text-muted)", fontSize: 11 }}>
                 <ChevronRight size={13} />
                 Voir détail
@@ -315,7 +404,9 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
   const [fulfilledNeeds, setFulfilledNeeds] = useState(report.fulfilledNeeds || []);
   const [status, setStatus] = useState(report.status);
   const [notes, setNotes] = useState(report.associationNotes || "");
+  const [adminNotes, setAdminNotes] = useState(report.adminNotes || "");
   const [saving, setSaving] = useState(false);
+  const [showFullImage, setShowFullImage] = useState(false);
 
   function toggleNeed(need) {
     setFulfilledNeeds((prev) =>
@@ -325,7 +416,19 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
 
   async function save() {
     setSaving(true);
-    await api.patch(`/reports/${report._id}`, { status, fulfilledNeeds, associationNotes: notes });
+    await api.patch(`/reports/${report._id}`, {
+      status,
+      fulfilledNeeds,
+      associationNotes: notes,
+      adminNotes: user.role === "admin" ? adminNotes : undefined
+    });
+    await onChanged();
+    setSaving(false);
+  }
+
+  async function handleAdminConfirmStatus(action) {
+    setSaving(true);
+    await api.patch(`/reports/${report._id}/confirm-status`, { action });
     await onChanged();
     setSaving(false);
   }
@@ -338,26 +441,90 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
       <div className="report-detail-header">
         <div>
           <strong style={{ fontSize: 15, fontWeight: 800 }}>
-            {report.type === "individual" ? "👤 Individuel" : `👥 Groupe · ${grp?.peopleCount || "?"} pers.`}
+            <TypeLabel report={report} count={grp?.peopleCount || "?"} />
           </strong>
-          <div className="report-detail-meta">
+          <div className="report-detail-meta" style={{ marginTop: 4 }}>
             <span className={`urgency-badge ${report.urgency}`}>
-              {report.urgency === "red" ? "🔴 Rouge" : report.urgency === "yellow" ? "🟡 Jaune" : "🟢 Vert"}
+              <UrgencyLabel urgency={report.urgency} withText />
             </span>
-            <span className={`status-badge ${report.status}`}>{report.status}</span>
+            <span className={`status-badge ${report.status}`}>
+              {STATUS_LABELS[report.status] || report.status}
+            </span>
           </div>
         </div>
         <button className="btn-secondary" style={{ padding: "6px 8px" }} onClick={onClose}><X size={15} /></button>
       </div>
 
-      {/* Info */}
+      {/* Description / Comment */}
+      {report.comment && (
+        <div style={{ background: "var(--surface-subtle)", padding: 10, borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 3 }}>
+            Description du signalement
+          </div>
+          <p style={{ fontSize: 13, color: "var(--text-primary)", margin: 0, lineHeight: 1.5 }}>
+            {report.comment}
+          </p>
+        </div>
+      )}
+
+      {/* Photo Preview if available */}
+      {report.imageUrl && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
+            <Camera size={12} /> Photo de la situation
+          </div>
+          <div
+            style={{ position: "relative", cursor: "pointer", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1.5px solid var(--border)", background: "#000" }}
+            onClick={() => setShowFullImage(true)}
+          >
+            <img src={report.imageUrl} alt="Photo du signalement" style={{ width: "100%", maxHeight: 150, objectFit: "cover", display: "block" }} />
+            <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.65)", color: "white", padding: "3px 8px", borderRadius: "var(--radius-sm)", fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+              <Eye size={12} /> Agrandir
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending status banner for Association / Admin */}
+      {report.pendingStatus?.status && (
+        <div style={{ background: "var(--color-green-light)", border: "1px solid var(--color-border-strong)", borderRadius: "var(--radius-md)", padding: 12, display: "flex", alignItems: "flex-start", gap: 10, color: "var(--color-primary-dark)" }}>
+          <Clock size={16} style={{ flexShrink: 0, marginTop: 2, color: "var(--color-primary)" }} />
+          <div style={{ fontSize: 12, lineHeight: 1.4 }}>
+            <strong style={{ color: "var(--color-primary-deep)" }}>Demande en attente de validation admin :</strong><br />
+            Passage à <strong>"{STATUS_LABELS[report.pendingStatus.status] || report.pendingStatus.status}"</strong> demandé par{" "}
+            {report.pendingStatus.requestedBy?.organizationName || "l'association"}.
+            {user.role === "admin" && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <button
+                  className="btn-success"
+                  style={{ padding: "4px 10px", fontSize: 11 }}
+                  disabled={saving}
+                  onClick={() => handleAdminConfirmStatus("approve")}
+                >
+                  <CheckCircle2 size={12} /> Valider le statut
+                </button>
+                <button
+                  className="btn-danger"
+                  style={{ padding: "4px 10px", fontSize: 11 }}
+                  disabled={saving}
+                  onClick={() => handleAdminConfirmStatus("reject")}
+                >
+                  <XCircle size={12} /> Refuser
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Info details */}
       {ind && (
         <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
           {ind.apparentGender && <span>Sexe apparent : <strong>{ind.apparentGender === "male" ? "Homme" : ind.apparentGender === "female" ? "Femme" : "Indéterminé"}</strong></span>}
           {ind.ageRange && <span>Tranche d'âge : <strong>{ind.ageRange}</strong></span>}
-          {ind.languageBarrier && <span>⚠️ Barrière de la langue</span>}
-          {ind.spokenToPerson && <span>✅ Contact direct établi</span>}
-          {ind.requestedHelp && <span>🙏 Aide explicitement demandée</span>}
+          {ind.languageBarrier && <span><AlertTriangle size={13} style={{ display: "inline", marginRight: 5 }} />Barrière de la langue</span>}
+          {ind.spokenToPerson && <span><CheckCircle2 size={13} style={{ display: "inline", marginRight: 5 }} />Contact direct établi</span>}
+          {ind.requestedHelp && <span><Heart size={13} style={{ display: "inline", marginRight: 5 }} />Aide explicitement demandée</span>}
         </div>
       )}
       {grp && (
@@ -392,9 +559,16 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
         </div>
       )}
 
-      {/* Status */}
+      {/* Status selector */}
       <label>
-        Statut du signalement
+        <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Statut du signalement</span>
+          {user.role === "association" && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: "normal" }}>
+              (Validation admin requise)
+            </span>
+          )}
+        </span>
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="new">Nouveau</option>
           <option value="in_progress">En cours</option>
@@ -405,13 +579,20 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
 
       {/* Notes */}
       <label>
-        Remarques libres
+        Remarques d'intervention (association)
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes d'intervention..." />
       </label>
 
+      {user.role === "admin" && (
+        <label>
+          Notes administratives internes
+          <textarea value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} placeholder="Notes de modération admin..." />
+        </label>
+      )}
+
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn-primary" disabled={saving} onClick={save} style={{ flex: 1 }}>
-          <CheckSquare size={15} /> {saving ? "Enregistrement..." : "Sauvegarder"}
+        <button className="btn-primary" disabled={saving} onClick={save} style={{ flex: 1, justifyContent: "center" }}>
+          <CheckSquare size={15} /> {saving ? "Enregistrement..." : user.role === "association" && status !== report.status ? "Proposer le changement de statut" : "Sauvegarder"}
         </button>
       </div>
 
@@ -419,7 +600,22 @@ function ReportDetailPane({ report, user, onClose, onChanged }) {
         <Clock size={11} style={{ display: "inline", marginRight: 3 }} />
         {new Date(report.createdAt).toLocaleString("fr-FR")}
         {report.addressHint && ` · ${report.addressHint}`}
+        {report.isAnonymous && " · Signalement anonyme"}
       </small>
+
+      {/* Full Image Modal */}
+      {showFullImage && (
+        <div className="modal-overlay" onClick={() => setShowFullImage(false)}>
+          <div className="modal-box" style={{ maxWidth: 700, padding: 12, background: "#111", textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="btn-secondary" style={{ padding: "4px 8px", color: "white", borderColor: "#444" }} onClick={() => setShowFullImage(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <img src={report.imageUrl} alt="Photo agrandie" style={{ maxWidth: "100%", maxHeight: "75vh", objectFit: "contain", borderRadius: 6 }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -497,9 +693,9 @@ function ReportFormModal({ user, onClose, onCreated }) {
             <p>Quelle situation souhaitez-vous signaler ?</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
               {[
-                { id: "individual", emoji: "👤", label: "Individuel", desc: "Une seule personne en difficulté" },
-                { id: "group", emoji: "👥", label: "Groupe", desc: "Plusieurs personnes au même endroit" }
-              ].map(({ id, emoji, label, desc }) => (
+                { id: "individual", Icon: User, label: "Individuel", desc: "Une seule personne en difficulté" },
+                { id: "group", Icon: Users, label: "Groupe", desc: "Plusieurs personnes au même endroit" }
+              ].map(({ id, Icon, label, desc }) => (
                 <button
                   key={id}
                   type="button"
@@ -512,7 +708,7 @@ function ReportFormModal({ user, onClose, onCreated }) {
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--brand-400)"; e.currentTarget.style.background = "var(--brand-50)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-card)"; }}
                 >
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>{emoji}</div>
+                  <Icon size={34} style={{ margin: "0 auto 8px", color: "var(--brand-500)" }} />
                   <div style={{ fontWeight: 800, fontSize: 15 }}>{label}</div>
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{desc}</div>
                 </button>
@@ -529,7 +725,7 @@ function ReportFormModal({ user, onClose, onCreated }) {
           <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <h2 style={{ margin: 0 }}>
-                {type === "individual" ? "👤 Signalement individuel" : "👥 Signalement de groupe"}
+                <TypeLabel type={type} /> Signalement
               </h2>
               <button className="btn-secondary" style={{ padding: "5px 8px" }} onClick={() => setStep("type")}><X size={14} /></button>
             </div>
@@ -538,7 +734,7 @@ function ReportFormModal({ user, onClose, onCreated }) {
               {/* Location */}
               <div style={{ background: "var(--surface-subtle)", borderRadius: "var(--radius-md)", padding: 12, border: "1.5px solid var(--border)" }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8 }}>
-                  📍 Localisation
+                  <MapPin size={13} style={{ display: "inline", marginRight: 5 }} /> Localisation
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <label>Longitude<input name="lng" type="number" step="0.0001" value={coords[0].toFixed(4)} onChange={(e) => setCoords([Number(e.target.value), coords[1]])} /></label>
@@ -610,12 +806,14 @@ function ReportFormModal({ user, onClose, onCreated }) {
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Niveau d'urgence</div>
                 <div className="urgency-selector">
                   {[
-                    { id: "green", label: "🟢 Stable", desc: "Besoins non critiques" },
-                    { id: "yellow", label: "🟡 Important", desc: "Intervention souhaitée" },
-                    { id: "red", label: "🔴 Critique", desc: "Appeler le 15 ou le 18" }
+                    { id: "green", label: "Stable", desc: "Besoins non critiques" },
+                    { id: "yellow", label: "Important", desc: "Intervention souhaitée" },
+                    { id: "red", label: "Critique", desc: "Appeler le 15 ou le 18" }
                   ].map(({ id, label, desc }) => (
                     <div key={id} className={`urgency-option ${id} ${urgency === id ? "selected" : ""}`} onClick={() => setUrgency(id)}>
-                      <div style={{ fontWeight: 800, marginBottom: 2 }}>{label}</div>
+                      <div style={{ fontWeight: 800, marginBottom: 2 }}>
+                        <UrgencyLabel urgency={id} withText /> {label !== (id === "green" ? "Stable" : id === "yellow" ? "Important" : "Critique") ? label : ""}
+                      </div>
                       <div style={{ fontSize: 10 }}>{desc}</div>
                     </div>
                   ))}
@@ -644,7 +842,7 @@ function ReportFormModal({ user, onClose, onCreated }) {
         {step === "result" && (
           <>
             <div style={{ textAlign: "center", marginBottom: 20 }}>
-              <div style={{ fontSize: 48, marginBottom: 10 }}>✅</div>
+              <CheckCircle2 size={46} style={{ margin: "0 auto 10px", color: "var(--brand-500)" }} />
               <h2 style={{ margin: 0 }}>Signalement envoyé !</h2>
               <p style={{ color: "var(--text-secondary)", marginTop: 6 }}>
                 {result?.assignedAssociations > 0

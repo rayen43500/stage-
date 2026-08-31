@@ -7,7 +7,9 @@ import {
   Store,
   Trash2,
   AlertCircle,
-  Home
+  Home,
+  Clock,
+  XCircle
 } from "lucide-react";
 import { api } from "./api/http";
 import { useSession } from "./store/session";
@@ -75,7 +77,9 @@ export function App() {
     return (
       <div className="pending-screen">
         <div className="pending-box">
-          <div className="pending-icon">⏳</div>
+          <div className="pending-icon">
+            <Clock size={34} />
+          </div>
           <h1>Compte en attente de validation</h1>
           <p>
             Votre inscription sur SOS Link est en cours d'examen par notre équipe.
@@ -99,7 +103,9 @@ export function App() {
     return (
       <div className="pending-screen">
         <div className="pending-box">
-          <div className="pending-icon" style={{ background: "var(--red-100)", color: "var(--red-500)" }}>✗</div>
+          <div className="pending-icon" style={{ background: "var(--red-100)", color: "var(--red-500)" }}>
+            <XCircle size={34} />
+          </div>
           <h1>Compte refusé</h1>
           <p>
             Votre demande d'inscription n'a pas pu être validée.

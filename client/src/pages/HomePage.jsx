@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import {
   Heart, Shield, Info, MapPin, Store, Users,
   Activity, ArrowRight, PlusCircle, CheckCircle2,
-  Calendar, FileText, Sparkles, PhoneCall, Lightbulb, BadgeEuro
+  Calendar, FileText, Sparkles, PhoneCall, Lightbulb, BadgeEuro,
+  HeartHandshake, UserRound, Crown, BookOpen, Zap
 } from "lucide-react";
 import { api } from "../api/http";
+import { QuickReportModal } from "../components/QuickReportModal";
 
 export function HomePage({ user }) {
   const [stats, setStats] = useState({ reportsCount: 0, donationsCount: 0, resolvedCount: 0 });
   const [loading, setLoading] = useState(true);
+  const [showQuickModal, setShowQuickModal] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -51,8 +54,8 @@ export function HomePage({ user }) {
       {/* Welcome Banner */}
       <div
         style={{
-          background: "linear-gradient(135deg, var(--brand-800) 0%, var(--brand-600) 100%)",
-          color: "var(--text-inverted)",
+          background: "linear-gradient(135deg, var(--color-primary-deep) 0%, var(--color-primary-dark) 100%)",
+          color: "#FFFFFF",
           padding: "36px",
           borderRadius: "var(--radius-xl)",
           boxShadow: "var(--shadow-lg)",
@@ -81,24 +84,23 @@ export function HomePage({ user }) {
           <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, marginBottom: 8, letterSpacing: "-0.5px", color: "white" }}>
             Bonjour, {user.organizationName || user.email}
           </h1>
-          <p style={{ fontSize: 15, color: "var(--brand-100)", lineHeight: 1.5, marginBottom: 0 }}>
+          <p style={{ fontSize: 15, color: "#C8E5DC", lineHeight: 1.5, marginBottom: 0 }}>
             Bienvenue sur votre espace <strong>{roleLabel}</strong>. Vous trouverez ci-dessous le récapitulatif
-            de votre activité, des actions rapides, ainsi que la description détaillée du projet et du cahier des charges.
+            de votre activité, des actions rapides, ainsi que la description détaillée du projet.
           </p>
         </div>
-        <div
+        <HeartHandshake
+          size={148}
+          strokeWidth={1.25}
           style={{
             position: "absolute",
-            right: "-20px",
-            bottom: "-40px",
-            fontSize: 160,
+            right: "-18px",
+            bottom: "-34px",
             opacity: 0.08,
             userSelect: "none",
             pointerEvents: "none"
           }}
-        >
-          🤝
-        </div>
+        />
       </div>
 
       {/* Quick Stats Grid */}
@@ -180,6 +182,19 @@ export function HomePage({ user }) {
               <>
                 <button
                   className="btn-primary"
+                  onClick={() => setShowQuickModal(true)}
+                  style={{
+                    justifyContent: "flex-start",
+                    width: "100%",
+                    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+                    border: "none",
+                    boxShadow: "0 3px 12px rgba(79, 70, 229, 0.28)"
+                  }}
+                >
+                  <Zap size={16} /> Signalement rapide (GPS & photo)
+                </button>
+                <button
+                  className="btn-secondary"
                   onClick={() => {
                     document.querySelector("nav button:nth-child(2)")?.click();
                     setTimeout(() => {
@@ -189,7 +204,7 @@ export function HomePage({ user }) {
                   }}
                   style={{ justifyContent: "flex-start", width: "100%" }}
                 >
-                  <PlusCircle size={16} /> Nouveau signalement
+                  <PlusCircle size={16} /> Nouveau signalement détaillé
                 </button>
                 <button
                   className="btn-secondary"
@@ -265,7 +280,7 @@ export function HomePage({ user }) {
       {/* Detailed Project Description & Cahier des Charges */}
       <div className="admin-section" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <h2 style={{ fontSize: 18, borderBottom: "2px solid var(--border)", paddingBottom: 8 }}>
-          📖 Cahier des Charges & Description du Projet SOS Link
+          <BookOpen size={18} /> Cahier des Charges & Description du Projet SOS Link
         </h2>
 
         {/* Section 1: Concept */}
@@ -288,7 +303,9 @@ export function HomePage({ user }) {
           </strong>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
             <div style={{ background: "var(--surface-subtle)", padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <strong style={{ display: "block", fontSize: 13, marginBottom: 4 }}>🙋 Citoyen</strong>
+              <strong style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 4 }}>
+                <UserRound size={14} /> Citoyen
+              </strong>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
                 - Inscription et validation automatique par e-mail.<br />
                 - Signalements géolocalisés individuels ou groupés (avec jauges, estimation et sélecteur couleur d'urgence).<br />
@@ -296,7 +313,9 @@ export function HomePage({ user }) {
               </p>
             </div>
             <div style={{ background: "var(--surface-subtle)", padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <strong style={{ display: "block", fontSize: 13, marginBottom: 4 }}>🤝 Association</strong>
+              <strong style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 4 }}>
+                <HeartHandshake size={14} /> Association
+              </strong>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
                 - Inscription avec numéro SIREN et validation manuelle par l'administrateur.<br />
                 - Définition d'un secteur d'intervention via cercle ajustable.<br />
@@ -304,7 +323,9 @@ export function HomePage({ user }) {
               </p>
             </div>
             <div style={{ background: "var(--surface-subtle)", padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <strong style={{ display: "block", fontSize: 13, marginBottom: 4 }}>🍽️ Restaurateur</strong>
+              <strong style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 4 }}>
+                <Store size={14} /> Restaurateur
+              </strong>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
                 - Inscription avec SIREN, adresse et validation admin.<br />
                 - Déclaration d'invendus avec photo, description et créneau horaire.<br />
@@ -312,7 +333,9 @@ export function HomePage({ user }) {
               </p>
             </div>
             <div style={{ background: "var(--surface-subtle)", padding: 12, borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-              <strong style={{ display: "block", fontSize: 13, marginBottom: 4 }}>👑 Administrateur</strong>
+              <strong style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 4 }}>
+                <Crown size={14} /> Administrateur
+              </strong>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
                 - Validation manuelle des comptes.<br />
                 - Supervision globale et suppression de comptes/signalements.<br />
@@ -359,6 +382,11 @@ export function HomePage({ user }) {
           appelez immédiatement le <strong>15 (SAMU)</strong> ou le <strong>18 (Pompiers)</strong>.
         </div>
       </div>
+      {/* Quick Report Modal */}
+      {showQuickModal && (
+        <QuickReportModal onClose={() => setShowQuickModal(false)} />
+      )}
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { HeartHandshake, Building2, Utensils, User, Eye, EyeOff } from "lucide-react";
+import { HeartHandshake, Building2, Utensils, User, Eye, EyeOff, MapPin, Heart, Lock } from "lucide-react";
 import { api } from "../api/http";
 import { useSession } from "../store/session";
 
@@ -82,14 +82,14 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
               background: "none", border: "none", cursor: "pointer",
               padding: "6px 0", marginBottom: 8, transition: "color var(--transition)"
             }}
-            onMouseEnter={(e) => e.currentTarget.style.color = "var(--brand-500)"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+            onMouseEnter={(e) => e.currentTarget.style.color = "var(--color-primary)"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--color-text-muted)"}
           >
             ← Retour à l'accueil
           </button>
         )}
         <div className="auth-brand">
-          <div className="brand-icon-lg">
+          <div className="brand-icon-lg" style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))" }}>
             <HeartHandshake size={28} color="white" />
           </div>
           <div>
@@ -109,7 +109,7 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
 
         {mode === "register" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Type de compte
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -124,8 +124,8 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
                     gap: 12,
                     padding: "10px 14px",
                     borderRadius: "var(--radius-md)",
-                    border: `2px solid ${role === id ? "var(--brand-400)" : "var(--border)"}`,
-                    background: role === id ? "var(--brand-50)" : "var(--surface-card)",
+                    border: `2px solid ${role === id ? "var(--color-primary)" : "var(--color-border)"}`,
+                    background: role === id ? "var(--color-green-light)" : "var(--color-white)",
                     cursor: "pointer",
                     transition: "all var(--transition)",
                     textAlign: "left"
@@ -133,16 +133,16 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
                 >
                   <div style={{
                     width: 36, height: 36, borderRadius: "var(--radius-sm)",
-                    background: role === id ? "var(--brand-100)" : "var(--surface-subtle)",
-                    color: role === id ? "var(--brand-500)" : "var(--text-muted)",
+                    background: role === id ? "#FFFFFF" : "var(--color-background)",
+                    color: role === id ? "var(--color-primary)" : "var(--color-text-muted)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     flexShrink: 0, transition: "all var(--transition)"
                   }}>
                     <Icon size={17} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{label}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--color-text)" }}>{label}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{desc}</div>
                   </div>
                 </button>
               ))}
@@ -171,7 +171,7 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
                 onClick={() => setShowPassword((v) => !v)}
                 style={{
                   position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-                  color: "var(--text-muted)", padding: 4, background: "none", border: "none"
+                  color: "var(--color-text-muted)", padding: 4, background: "none", border: "none"
                 }}
               >
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -202,8 +202,8 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
 
           {mode === "register" && role === "association" && (
             <>
-              <div style={{ background: "var(--surface-subtle)", borderRadius: "var(--radius-md)", padding: 14, border: "1.5px solid var(--border)" }}>
-                <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
+              <div style={{ background: "var(--color-background-soft)", borderRadius: "var(--radius-md)", padding: 14, border: "1.5px solid var(--color-border)" }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
                   Zone d'intervention
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -234,8 +234,8 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
           )}
 
           {mode === "register" && role === "restaurant" && (
-            <div style={{ background: "var(--surface-subtle)", borderRadius: "var(--radius-md)", padding: 14, border: "1.5px solid var(--border)" }}>
-              <div style={{ fontWeight: 700, fontSize: 12, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
+            <div style={{ background: "var(--color-background-soft)", borderRadius: "var(--radius-md)", padding: 14, border: "1.5px solid var(--color-border)" }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
                 Localisation de votre établissement
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -248,7 +248,7 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
                   <input name="lat" type="number" step="0.0001" defaultValue="48.8566" />
                 </label>
               </div>
-              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+              <p style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 8 }}>
                 Ces coordonnées permettent d'associer automatiquement vos dons à l'association locale compétente.
               </p>
             </div>
@@ -262,18 +262,18 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
           )}
 
           {mode === "register" && (
-            <label className="check full" style={{ padding: "10px 12px", background: "var(--surface-subtle)", borderRadius: "var(--radius-md)", border: "1.5px solid var(--border)" }}>
+            <label className="check full" style={{ padding: "10px 12px", background: "var(--color-background-soft)", borderRadius: "var(--radius-md)", border: "1.5px solid var(--color-border)" }}>
               <input name="consentRgpd" type="checkbox" required />
-              <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>
                 J'accepte la collecte minimale des données nécessaires au service, conformément à la{" "}
-                <a href="#" style={{ color: "var(--brand-500)" }}>politique de confidentialité</a>.
+                <a href="#" style={{ color: "var(--color-primary)", fontWeight: 600 }}>politique de confidentialité</a>.
               </span>
             </label>
           )}
 
           {error && <p className="error">{error}</p>}
 
-          <button className="btn-primary" type="submit" disabled={loading}>
+          <button className="btn-primary" type="submit" disabled={loading} style={{ background: "var(--color-primary)", color: "#FFFFFF" }}>
             {loading
               ? "..."
               : mode === "login"
@@ -284,20 +284,26 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
           </button>
 
           {mode === "register" && role !== "citizen" && (
-            <p style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+            <p style={{ fontSize: 11, color: "var(--color-text-muted)", textAlign: "center" }}>
               Les comptes associations et restaurateurs sont activés après validation manuelle par l'administrateur.
             </p>
           )}
         </form>
       </section>
 
-      {/* RIGHT PANEL: Classic image and badges layout matching the screenshot */}
+      {/* RIGHT PANEL: Visual identity layout with green badges */}
       <section className="auth-visual" style={{ overflow: "hidden", display: "flex", alignItems: "flex-end" }}>
         <div style={{ zIndex: 2 }}>
           <div className="auth-badges" style={{ marginBottom: 20 }}>
-            <span className="auth-badge" style={{ background: "rgba(34, 150, 243, 0.25)", borderColor: "rgba(34, 150, 243, 0.4)" }}>🗺️ Île-de-France</span>
-            <span className="auth-badge" style={{ background: "rgba(234, 179, 8, 0.25)", borderColor: "rgba(234, 179, 8, 0.4)" }}>💛 Phase pilote</span>
-            <span className="auth-badge" style={{ background: "rgba(108, 117, 125, 0.25)", borderColor: "rgba(108, 117, 125, 0.4)" }}>🔒 RGPD</span>
+            <span className="auth-badge" style={{ background: "rgba(21, 154, 120, 0.25)", borderColor: "rgba(21, 154, 120, 0.4)", color: "#FFFFFF" }}>
+              <MapPin size={13} /> Île-de-France
+            </span>
+            <span className="auth-badge" style={{ background: "rgba(21, 154, 120, 0.25)", borderColor: "rgba(21, 154, 120, 0.4)", color: "#FFFFFF" }}>
+              <Heart size={13} /> Phase pilote
+            </span>
+            <span className="auth-badge" style={{ background: "rgba(21, 154, 120, 0.25)", borderColor: "rgba(21, 154, 120, 0.4)", color: "#FFFFFF" }}>
+              <Lock size={13} /> RGPD
+            </span>
           </div>
           <h1 style={{ textShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>Signaler, orienter, intervenir plus vite.</h1>
           <p style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)", margin: 0 }}>
