@@ -1,24 +1,24 @@
 {
-  "name": "sos-link-client",
+  "name": "sos-connect-mobile",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "main": "expo/AppEntry",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
+    "@expo/metro-runtime": "~6.1.2",
+    "@expo/vector-icons": "^14.1.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "axios": "^1.7.3",
-    "leaflet": "^1.9.4",
-    "lucide-react": "^0.468.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-leaflet": "^4.2.1",
-    "zustand": "^4.5.4"
-  },
-  "devDependencies": {
-    "vite": "^5.3.5"
+    "expo": "~54.0.0",
+    "expo-location": "~19.0.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.0"
   }
 }

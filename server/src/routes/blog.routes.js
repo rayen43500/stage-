@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { BlogPost } from "../models/BlogPost.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { auth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST /api/blog — Create a new blog post (Admin only)
-router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.post("/", auth, requireRole("admin"), async (req, res) => {
   try {
     const { title, summary, content, imageUrl, category, author } = req.body;
     if (!title || !summary || !content) {
@@ -52,7 +52,7 @@ router.post("/", requireAuth, requireRole(["admin"]), async (req, res) => {
 });
 
 // DELETE /api/blog/:id — Delete a blog post (Admin only)
-router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.delete("/:id", auth, requireRole("admin"), async (req, res) => {
   try {
     const post = await BlogPost.findByIdAndDelete(req.params.id);
     if (!post) return res.status(404).json({ message: "Article introuvable." });

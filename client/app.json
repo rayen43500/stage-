@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "SOS CONNECT",
+    "slug": "sos-connect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      ["expo-location", { "locationWhenInUsePermission": "SOS CONNECT utilise votre position pour orienter les signalements vers les associations proches." }]
+    ]
+  }
+}

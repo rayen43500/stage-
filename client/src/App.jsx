@@ -1,214 +1,109 @@
-import { useEffect, useState } from "react";
-import {
-  HeartHandshake,
-  LogOut,
-  MapPinned,
-  ShieldCheck,
-  Store,
-  Trash2,
-  AlertCircle,
-  Home,
-  Clock,
-  XCircle
-} from "lucide-react";
-import { api } from "./api/http";
-import { useSession } from "./store/session";
-import { LandingPage } from "./pages/LandingPage";
-import { AuthPage } from "./pages/AuthPage";
-import { HomePage } from "./pages/HomePage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { DonationsPage } from "./pages/DonationsPage";
-import { AdminPage } from "./pages/AdminPage";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, Image, Modal, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Location from "expo-location";
+import { Ionicons } from "@expo/vector-icons";
+import axios from "axios";
+import heroImage from "../assets/sos-link-hero.png";
 
-const tabs = [
-  { id: "home", label: "Accueil", icon: Home, roles: ["citizen", "association", "restaurant", "admin"] },
-  { id: "reports", label: "Signalements", icon: MapPinned, roles: ["citizen", "association", "admin"] },
-  { id: "donations", label: "Invendus", icon: Store, roles: ["restaurant", "association", "admin"] },
-  { id: "admin", label: "Administration", icon: ShieldCheck, roles: ["admin"] }
-];
+// Pour tester sur un téléphone, définissez EXPO_PUBLIC_API_URL avec l'IP du PC,
+// par exemple http://192.168.1.20:5000/api (localhost vise le téléphone lui-même).
+const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
+const api = axios.create({ baseURL: API_URL });
+api.interceptors.request.use(async (config) => {
+  const token = await AsyncStorage.getItem("sos-link-token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
-export function App() {
-  const { user, token, logout, setSession } = useSession();
-  const [activeTab, setActiveTab] = useState("home");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  // Controls the public routing before login: 'landing' | 'login' | 'register'
-  const [publicPage, setPublicPage] = useState("landing");
+const needs = ["food", "shelter", "health", "clothes", "hygiene", "psychological", "other"];
+const labels = { food: "Alimentation", shelter: "Hébergement", health: "Soins", clothes: "Vêtements", hygiene: "Hygiène", psychological: "Soutien psychologique", other: "Autre" };
+const needIcons = { food: "restaurant", shelter: "home", health: "medkit", clothes: "shirt", hygiene: "water", psychological: "heart", other: "add-circle" };
+const statusLabels = { new: "Nouveau", in_progress: "En cours", resolved: "Résolu", removed: "Retiré", declared: "Déclaré", assigned: "Assigné", collected: "Collecté", cancelled: "Annulé" };
+const services = needs.slice(0, -1);
+const initialCoords = [2.3522, 48.8566];
 
-  useEffect(() => {
-    if (!token) return;
-    api.get("/auth/me")
-      .then(({ data }) => setSession({ token, user: data.user }))
-      .catch(logout);
-  }, [token]);
+function errorMessage(error) { return error.response?.data?.message || "Une erreur est survenue. Vérifiez la connexion au serveur."; }
+function date(value) { return value ? new Date(value).toLocaleDateString("fr-FR") : "—"; }
+function Button({ title, onPress, variant = "primary", disabled = false, icon }) { return <Pressable disabled={disabled} onPress={onPress} style={[styles.button, styles[`button_${variant}`], disabled && styles.disabled]}><View style={styles.buttonInside}>{icon && <Ionicons name={icon} size={16} color={variant === "secondary" ? colors.green : "#fff"}/>}<Text style={[styles.buttonText, variant === "secondary" && styles.buttonTextSecondary]}>{title}</Text></View></Pressable>; }
+function Field({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType = "default" }) { return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#8aa099" secureTextEntry={secureTextEntry} multiline={multiline} keyboardType={keyboardType} style={[styles.input, multiline && styles.textarea]}/></View>; }
+function Toggle({ label, value, onValueChange }) { return <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: "#edf3ef" }}><Text style={styles.body}>{label}</Text><Switch value={value} onValueChange={onValueChange} trackColor={{ false: "#cddbd5", true: "#8ccdb8" }} thumbColor={value ? colors.green : "#fff"}/></View>; }
+function Chip({ title, selected, onPress, color }) { return <Pressable onPress={onPress} style={[styles.chip, selected && { backgroundColor: color || colors.green, borderColor: color || colors.green }]}><Text style={[styles.chipText, selected && { color: "#fff" }]}>{title}</Text></Pressable>; }
+function NeedChip({ need, selected, onPress }) { return <Pressable onPress={onPress} style={[styles.chip, selected && { backgroundColor: colors.green, borderColor: colors.green }]}><View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><Ionicons name={needIcons[need]} size={14} color={selected ? "#fff" : colors.green}/><Text style={[styles.chipText, selected && { color: "#fff" }]}>{labels[need]}</Text></View></Pressable>; }
+function Card({ children, style }) { return <View style={[styles.card, style]}>{children}</View>; }
 
-  // Set default tab on login
-  useEffect(() => {
-    if (user) setActiveTab("home");
-  }, [user?.role]);
-
-  async function handleDeleteAccount() {
-    setDeleting(true);
-    try {
-      await api.delete("/auth/me");
-      logout();
-    } catch {
-      setDeleting(false);
-      setShowDeleteConfirm(false);
-    }
-  }
-
-  // ── Public pages (not logged in) ──────────────────────────────
-  if (!user) {
-    if (publicPage === "landing") {
-      return <LandingPage onNavigate={(mode) => setPublicPage(mode)} />;
-    }
-    // login or register → show AuthPage with initial mode passed as prop
-    return (
-      <AuthPage
-        initialMode={publicPage}
-        onNavigate={(mode) => setPublicPage(mode)}
-      />
-    );
-  }
-
-  // Show pending/rejected screen for organizations awaiting validation
-  if (["association", "restaurant"].includes(user.role) && user.status === "pending") {
-    return (
-      <div className="pending-screen">
-        <div className="pending-box">
-          <div className="pending-icon">
-            <Clock size={34} />
-          </div>
-          <h1>Compte en attente de validation</h1>
-          <p>
-            Votre inscription sur SOS Link est en cours d'examen par notre équipe.
-            Vous recevrez un email dès que votre compte sera activé.
-          </p>
-          <p className="text-sm text-muted">
-            Organisation : <strong>{user.organizationName}</strong><br />
-            Email : {user.email}
-          </p>
-          <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center" }}>
-            <button className="btn-secondary" onClick={logout}>
-              <LogOut size={15} /> Déconnexion
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (["association", "restaurant"].includes(user.role) && user.status === "rejected") {
-    return (
-      <div className="pending-screen">
-        <div className="pending-box">
-          <div className="pending-icon" style={{ background: "var(--red-100)", color: "var(--red-500)" }}>
-            <XCircle size={34} />
-          </div>
-          <h1>Compte refusé</h1>
-          <p>
-            Votre demande d'inscription n'a pas pu être validée.
-            Si vous pensez qu'il s'agit d'une erreur, contactez-nous à{" "}
-            <strong>contact@soslink.fr</strong>.
-          </p>
-          <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center" }}>
-            <button className="btn-secondary" onClick={logout}>
-              <LogOut size={15} /> Déconnexion
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const visibleTabs = tabs.filter((tab) => tab.roles.includes(user.role));
-  const CurrentPage =
-    activeTab === "home" ? HomePage
-    : activeTab === "donations" ? DonationsPage
-    : activeTab === "admin" ? AdminPage
-    : ReportsPage;
-
-  return (
-    <>
-      <main className="app-shell">
-        <aside className="sidebar">
-          <div className="brand">
-            <div className="brand-icon">
-              <HeartHandshake size={22} color="white" />
-            </div>
-            <div>
-              <strong style={{ fontSize: 15, fontWeight: 900 }}>SOS CONNECT</strong>
-              <span style={{ fontSize: 10, fontWeight: 700 }}>By Solid’Uni</span>
-            </div>
-          </div>
-          <nav>
-            {visibleTabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  className={activeTab === tab.id ? "active" : ""}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  <span className="nav-icon">
-                    <Icon size={15} />
-                  </span>
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="profile-card">
-            <div className="profile-name">{user.organizationName || user.email}</div>
-            <div className="profile-role">
-              <span className="status-dot"></span>
-              {user.role === "citizen" ? "Citoyen"
-               : user.role === "association" ? "Association"
-               : user.role === "restaurant" ? "Restaurateur"
-               : "Administrateur"}
-              {" · "}
-              {user.status === "active" ? "Actif" : user.status}
-            </div>
-          </div>
-
-          {user.role === "citizen" && (
-            <button className="btn-delete-account" onClick={() => setShowDeleteConfirm(true)}>
-              <Trash2 size={13} /> Supprimer mon compte
-            </button>
-          )}
-
-          <button className="btn-ghost" onClick={logout}>
-            <LogOut size={16} /> Déconnexion
-          </button>
-        </aside>
-        <section className="workspace">
-          <CurrentPage user={user} />
-        </section>
-      </main>
-
-      {showDeleteConfirm && (
-        <div className="modal-overlay">
-          <div className="modal-box">
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "var(--radius-md)", background: "var(--red-100)", color: "var(--red-500)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <AlertCircle size={22} />
-              </div>
-              <h2 style={{ margin: 0 }}>Supprimer mon compte</h2>
-            </div>
-            <p>
-              Cette action est <strong>irréversible</strong>. Votre compte et tous vos signalements seront supprimés définitivement conformément au RGPD.
-            </p>
-            <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowDeleteConfirm(false)}>Annuler</button>
-              <button className="btn-danger" disabled={deleting} onClick={handleDeleteAccount}>
-                {deleting ? "Suppression..." : "Confirmer la suppression"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+export default function App() {
+  const [session, setSession] = useState(null); const [ready, setReady] = useState(false);
+  useEffect(() => { (async () => { const token = await AsyncStorage.getItem("sos-link-token"); const rawUser = await AsyncStorage.getItem("sos-link-user"); if (token && rawUser) { try { const { data } = await api.get("/auth/me"); setSession({ token, user: data.user }); await AsyncStorage.setItem("sos-link-user", JSON.stringify(data.user)); } catch { await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]); } } setReady(true); })(); }, []);
+  const login = async (data) => { await AsyncStorage.multiSet([["sos-link-token", data.token], ["sos-link-user", JSON.stringify(data.user)]]); setSession(data); };
+  const logout = async () => { await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]); setSession(null); };
+  if (!ready) return <SafeAreaView style={styles.center}><Text>Chargement de SOS CONNECT…</Text></SafeAreaView>;
+  return <SafeAreaView style={styles.app}><StatusBar barStyle="dark-content" backgroundColor="#F4F8F6"/>{session ? <PrivateApp session={session} logout={logout}/> : <PublicApp login={login}/>}</SafeAreaView>;
 }
+
+function PublicApp({ login }) {
+  const [page, setPage] = useState("landing");
+  return page === "auth" ? <AuthScreen login={login} back={() => setPage("landing")}/> : <Landing goAuth={() => setPage("auth")}/>;
+}
+
+function Landing({ goAuth }) {
+  const [posts, setPosts] = useState([]); const [quick, setQuick] = useState(false);
+  useEffect(() => { api.get("/blog").then(({ data }) => setPosts(data)).catch(() => {}); }, []);
+  return <ScrollView contentContainerStyle={styles.page}><View style={styles.hero}><View style={styles.brandRow}><View style={styles.brandMark}><Ionicons name="people" size={23} color="#fff"/></View><View><Text style={styles.logo}>SOS CONNECT</Text><Text style={styles.subtitle}>Solidarité · Orientation · Soutien</Text></View></View><Image source={heroImage} style={styles.heroImage}/><Text style={styles.heroTitle}>Signaler, orienter et agir ensemble.</Text><Text style={styles.body}>Une plateforme qui relie citoyens, associations et commerçants solidaires.</Text><Button title="Signalement rapide" icon="megaphone" onPress={() => setQuick(true)}/><Button title="Connexion / Inscription" variant="secondary" icon="person" onPress={goAuth}/></View><Section title="Comment ça marche"><Info title="1. Signalez" text="Décrivez une situation et sa localisation."/><Info title="2. Les associations sont alertées" text="Les équipes locales reçoivent les signalements de leur zone."/><Info title="3. Suivez l'action" text="La réponse est coordonnée depuis l'application."/></Section>{posts.length > 0 && <Section title="Actualités"><ScrollView horizontal showsHorizontalScrollIndicator={false}>{posts.map(p => <Card key={p._id} style={styles.post}><Image source={{ uri: p.imageUrl }} style={styles.postImage}/><Text style={styles.cardTitle}>{p.title}</Text><Text style={styles.small}>{p.summary}</Text></Card>)}</ScrollView></Section>}<QuickReport visible={quick} close={() => setQuick(false)}/></ScrollView>;
+}
+function Info({ title, text }) { return <Card><Text style={styles.cardTitle}>{title}</Text><Text style={styles.body}>{text}</Text></Card>; }
+function Section({ title, children }) { return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>; }
+
+function AuthScreen({ login, back }) {
+  const [mode, setMode] = useState("login"), [role, setRole] = useState("citizen"), [busy, setBusy] = useState(false), [coords, setCoords] = useState(initialCoords);
+  const [form, setForm] = useState({ email: "", password: "", organizationName: "", sirenSiret: "", address: "", phone: "", radiusKm: "8", helloAssoUrl: "" }); const [selectedServices, setSelectedServices] = useState([]);
+  const set = (key) => (value) => setForm(f => ({ ...f, [key]: value }));
+  const locate = async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return Alert.alert("Localisation", "Autorisez la localisation pour remplir les coordonnées."); const p = await Location.getCurrentPositionAsync({}); setCoords([p.coords.longitude, p.coords.latitude]); Alert.alert("Position détectée"); };
+  const submit = async () => { if (!form.email || !form.password) return Alert.alert("Champs requis", "Saisissez l'adresse e-mail et le mot de passe."); setBusy(true); try { let payload = { email: form.email, password: form.password }; if (mode === "register") { payload = { ...payload, role, consentRgpd: true, organizationName: form.organizationName || undefined, sirenSiret: form.sirenSiret || undefined, address: form.address || undefined, phone: form.phone || undefined, helloAssoUrl: form.helloAssoUrl || undefined, services: role === "association" ? selectedServices : undefined, interventionZone: role === "citizen" ? undefined : { center: { coordinates: coords }, radiusKm: role === "association" ? Number(form.radiusKm || 8) : 0 } }; } const { data } = await api.post(`/auth/${mode === "login" ? "login" : "register"}`, payload); await login(data); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } finally { setBusy(false); } };
+  return <ScrollView contentContainerStyle={styles.page}><Pressable onPress={back}><Text style={styles.link}>← Accueil</Text></Pressable><Text style={styles.logo}>SOS CONNECT</Text><View style={styles.tabs}><Chip title="Connexion" selected={mode === "login"} onPress={() => setMode("login")}/><Chip title="Inscription" selected={mode === "register"} onPress={() => setMode("register")}/></View>{mode === "register" && <><Text style={styles.label}>Type de compte</Text><View style={styles.wrap}>{[["citizen","Citoyen"],["association","Association"],["restaurant","Restaurateur"]].map(([id, name]) => <Chip key={id} title={name} selected={role === id} onPress={() => setRole(id)}/>)}</View></>}<Field label="Adresse e-mail" value={form.email} onChangeText={set("email")} keyboardType="email-address" placeholder="exemple@mail.com"/><Field label="Mot de passe" value={form.password} onChangeText={set("password")} secureTextEntry placeholder="8 caractères minimum"/>{mode === "register" && role !== "citizen" && <><Field label="Nom de la structure" value={form.organizationName} onChangeText={set("organizationName")}/><Field label="SIREN / SIRET" value={form.sirenSiret} onChangeText={set("sirenSiret")} keyboardType="numeric"/><Field label="Adresse" value={form.address} onChangeText={set("address")}/><Field label="Téléphone" value={form.phone} onChangeText={set("phone")} keyboardType="phone-pad"/><Button title="Utiliser ma position GPS" variant="secondary" icon="location" onPress={locate}/>{role === "association" && <><Field label="Rayon d'intervention (km)" value={form.radiusKm} onChangeText={set("radiusKm")} keyboardType="numeric"/><Text style={styles.label}>Services proposés</Text><View style={styles.wrap}>{services.map(s => <Chip key={s} title={labels[s]} selected={selectedServices.includes(s)} onPress={() => setSelectedServices(v => v.includes(s) ? v.filter(x => x !== s) : [...v, s])}/>)}</View></>}<Field label="Lien HelloAsso (facultatif)" value={form.helloAssoUrl} onChangeText={set("helloAssoUrl")} placeholder="https://…"/></>}<Button title={busy ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : "Créer mon compte"} disabled={busy} onPress={submit}/></ScrollView>;
+}
+
+function PrivateApp({ session, logout }) {
+  const { user } = session; const [tab, setTab] = useState("home"); const [deleteModal, setDeleteModal] = useState(false);
+  if (["association", "restaurant"].includes(user.role) && user.status !== "active") return <Pending user={user} logout={logout}/>;
+  const tabs = [{ id: "home", label: "Accueil", icon: "home" }, ...(user.role !== "restaurant" ? [{ id: "reports", label: "Signalements", icon: "map" }] : []), ...(user.role !== "citizen" ? [{ id: "donations", label: "Invendus", icon: "restaurant" }] : []), ...(user.role === "admin" ? [{ id: "admin", label: "Admin", icon: "shield" }] : [])];
+  return <View style={styles.flex}><View style={styles.topbar}><View><Text style={styles.topLogo}>SOS CONNECT</Text><Text style={styles.small}>{user.organizationName || user.email}</Text></View><Pressable onPress={logout}><Ionicons name="log-out-outline" size={26} color={colors.green}/></Pressable></View><View style={styles.content}>{tab === "home" && <Home user={user}/>} {tab === "reports" && <Reports user={user}/>} {tab === "donations" && <Donations user={user}/>} {tab === "admin" && <Admin/>}</View><View style={styles.nav}>{tabs.map(t => <Pressable key={t.id} style={styles.navItem} onPress={() => setTab(t.id)}><Ionicons name={t.icon} size={22} color={tab === t.id ? colors.green : "#71827b"}/><Text style={[styles.navText, tab === t.id && styles.navTextActive]}>{t.label}</Text></Pressable>)}</View>{user.role === "citizen" && <Pressable onPress={() => setDeleteModal(true)}><Text style={styles.dangerLink}>Supprimer mon compte</Text></Pressable>}<Confirm visible={deleteModal} title="Supprimer mon compte" text="Cette action est irréversible." confirm={async () => { await api.delete("/auth/me"); await logout(); }} close={() => setDeleteModal(false)}/></View>;
+}
+function Pending({ user, logout }) { return <View style={styles.center}><Ionicons name={user.status === "rejected" ? "close-circle" : "time"} color={user.status === "rejected" ? colors.red : colors.orange} size={54}/><Text style={styles.sectionTitle}>{user.status === "rejected" ? "Compte refusé" : "Compte en attente de validation"}</Text><Text style={styles.body}>{user.status === "rejected" ? "Contactez contact@soslink.fr si vous pensez qu'il s'agit d'une erreur." : "Votre structure est en cours d'examen. Vous recevrez un email après validation."}</Text><Button title="Déconnexion" onPress={logout}/></View>; }
+
+function Home({ user }) { const [data, setData] = useState(null); useEffect(() => { const route = user.role === "admin" ? "/admin/dashboard" : user.role === "restaurant" ? "/donations" : "/reports"; api.get(route).then(r => setData(r.data)).catch(() => {}); }, []); return <ScrollView contentContainerStyle={styles.page}><Text style={styles.sectionTitle}>Bonjour</Text><Text style={styles.body}>Bienvenue dans votre espace SOS CONNECT.</Text>{user.role === "admin" && data && <View style={styles.grid}>{[["Utilisateurs",data.users],["Organisations en attente",data.pendingOrganizations],["Signalements",data.reports],["Résolus",data.resolvedReports],["Dons",data.donations]].map(([k,v]) => <Card key={k} style={styles.metric}><Text style={styles.metricValue}>{v}</Text><Text style={styles.small}>{k}</Text></Card>)}</View>}{Array.isArray(data) && <Card><Text style={styles.cardTitle}>{data.length} élément(s) à traiter</Text><Text style={styles.small}>Ouvrez l'onglet correspondant pour consulter le détail.</Text></Card>}</ScrollView>; }
+
+function Reports({ user }) {
+  const [reports, setReports] = useState([]), [form, setForm] = useState(false), [filter, setFilter] = useState(""), [loading, setLoading] = useState(false);
+  const load = useCallback(async () => { setLoading(true); try { const qs = filter ? `?status=${filter}` : ""; const { data } = await api.get(`/reports${qs}`); setReports(data); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } finally { setLoading(false); } }, [filter]); useEffect(() => { load(); }, [load]);
+  return <ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Signalements</Text>{["citizen","admin"].includes(user.role) && <Button title="Nouveau" icon="add" onPress={() => setForm(true)}/>}</View><View style={styles.wrap}>{[["","Tous"],["new","Nouveaux"],["in_progress","En cours"],["resolved","Résolus"]].map(([id, title]) => <Chip key={title} title={title} selected={filter === id} onPress={() => setFilter(id)}/>)}</View>{loading ? <Text>Chargement…</Text> : reports.map(r => <ReportCard key={r._id} report={r} user={user} changed={load}/>) }{reports.length === 0 && <Text style={styles.small}>Aucun signalement.</Text>}<ReportForm visible={form} close={() => setForm(false)} created={load}/></ScrollView>;
+}
+function ReportCard({ report, user, changed }) { const [open, setOpen] = useState(false); const update = async (status) => { try { await api.patch(`/reports/${report._id}`, { status }); Alert.alert("Demande enregistrée"); changed(); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }; return <Card><Pressable onPress={() => setOpen(v => !v)}><View style={styles.rowBetween}><Text style={styles.cardTitle}>{report.type === "group" ? "Groupe" : "Personne"} · {statusLabels[report.status]}</Text><Text style={[styles.urgency, { color: report.urgency === "red" ? colors.red : report.urgency === "yellow" ? colors.orange : colors.green }]}>{report.urgency?.toUpperCase()}</Text></View><Text style={styles.small}>{date(report.createdAt)} · {report.addressHint || "Position GPS"}</Text><Text style={styles.small}>{(report.needs || []).map(x => labels[x] || x).join(", ")}</Text>{report.comment && <Text style={styles.body}>{report.comment}</Text>}{report.imageUrl && <Image source={{ uri: report.imageUrl }} style={styles.reportImage}/>}</Pressable>{open && <><Text style={styles.small}>Coordonnées : {report.location?.coordinates?.join(", ")}</Text>{user.role === "association" && <View style={styles.wrap}>{["in_progress", "resolved", "removed"].map(s => <Chip key={s} title={statusLabels[s]} onPress={() => update(s)}/>)}</View>}{user.role === "admin" && report.pendingStatus?.status && <View style={styles.wrap}><Button title="Valider la demande" onPress={async () => { await api.patch(`/reports/${report._id}/confirm-status`, { action: "approve" }); changed(); }}/><Button title="Rejeter" variant="danger" onPress={async () => { await api.patch(`/reports/${report._id}/confirm-status`, { action: "reject" }); changed(); }}/></View>}</>}</Card>; }
+function ReportForm({ visible, close, created }) {
+  const [type, setType] = useState("individual"); const [addressHint, setAddress] = useState(""); const [comment, setComment] = useState(""); const [imageUrl, setImage] = useState(""); const [urgency, setUrgency] = useState("yellow"); const [chosen, setChosen] = useState([]); const [coords, setCoords] = useState(initialCoords); const [busy, setBusy] = useState(false);
+  const [individual, setIndividual] = useState({ apparentGender: "unknown", ageRange: "30-40", languageBarrier: false, spokenToPerson: false, requestedHelp: false });
+  const [group, setGroup] = useState({ peopleCount: "10", majorityGender: "mixed", averageAgeRange: "30-40" }); const [otherNeed, setOtherNeed] = useState("");
+  const locate = async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return Alert.alert("Localisation non autorisée", "Saisissez un repère pour continuer."); const location = await Location.getCurrentPositionAsync({}); setCoords([location.coords.longitude, location.coords.latitude]); Alert.alert("Position ajoutée"); };
+  const toggle = (need) => setChosen((value) => value.includes(need) ? value.filter((item) => item !== need) : [...value, need]);
+  const send = async () => { setBusy(true); try { await api.post("/reports", { type, coordinates: coords, addressHint, comment, imageUrl: imageUrl || undefined, urgency, needs: chosen, otherNeed: otherNeed || undefined, individual: type === "individual" ? individual : undefined, group: type === "group" ? { ...group, peopleCount: Number(group.peopleCount || 0) } : undefined }); Alert.alert("Signalement envoyé", "Les associations de la zone ont été alertées."); close(); created(); } catch (error) { Alert.alert("Erreur", errorMessage(error)); } finally { setBusy(false); } };
+  return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.app}><ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Nouveau signalement</Text><Pressable onPress={close}><Ionicons name="close" size={28}/></Pressable></View><Text style={styles.body}>Les informations sont transmises seulement aux associations de votre secteur.</Text><Text style={styles.label}>Type de signalement</Text><View style={styles.wrap}><Chip title="Personne seule" selected={type === "individual"} onPress={() => setType("individual")}/><Chip title="Groupe" selected={type === "group"} onPress={() => setType("group")}/></View><Button title="Utiliser ma position" variant="secondary" icon="location" onPress={locate}/><Field label="Adresse ou repère" value={addressHint} onChangeText={setAddress}/>{type === "individual" ? <><Text style={styles.label}>Sexe apparent</Text><View style={styles.wrap}>{[["male","Homme"],["female","Femme"],["unknown","Indéterminé"]].map(([id,title]) => <Chip key={id} title={title} selected={individual.apparentGender === id} onPress={() => setIndividual(v => ({ ...v, apparentGender: id }))}/>)}</View><Field label="Tranche d'âge estimée" value={individual.ageRange} onChangeText={(ageRange) => setIndividual(v => ({ ...v, ageRange }))} placeholder="ex. 30-40"/><Toggle label="Barrière de la langue" value={individual.languageBarrier} onValueChange={(languageBarrier) => setIndividual(v => ({ ...v, languageBarrier }))}/><Toggle label="Avez-vous parlé à la personne ?" value={individual.spokenToPerson} onValueChange={(spokenToPerson) => setIndividual(v => ({ ...v, spokenToPerson }))}/><Toggle label="La personne a demandé de l'aide ?" value={individual.requestedHelp} onValueChange={(requestedHelp) => setIndividual(v => ({ ...v, requestedHelp }))}/></> : <><Field label="Nombre de personnes estimé" value={group.peopleCount} keyboardType="numeric" onChangeText={(peopleCount) => setGroup(v => ({ ...v, peopleCount }))}/><Text style={styles.label}>Sexe majoritaire</Text><View style={styles.wrap}>{[["male","Hommes"],["female","Femmes"],["mixed","Mixte"]].map(([id,title]) => <Chip key={id} title={title} selected={group.majorityGender === id} onPress={() => setGroup(v => ({ ...v, majorityGender: id }))}/>)}</View><Field label="Tranche d'âge moyenne" value={group.averageAgeRange} onChangeText={(averageAgeRange) => setGroup(v => ({ ...v, averageAgeRange }))}/></>}<Text style={styles.label}>Besoins identifiés</Text><View style={styles.wrap}>{needs.map(need => <Chip key={need} title={labels[need]} selected={chosen.includes(need)} onPress={() => toggle(need)}/>)}</View>{chosen.includes("other") && <Field label="Autre besoin" value={otherNeed} onChangeText={setOtherNeed}/>}<Text style={styles.label}>Niveau d'urgence</Text><View style={styles.wrap}>{[["green","Vert"],["yellow","Jaune"],["red","Rouge"]].map(([id,title]) => <Chip key={id} title={title} color={id === "red" ? colors.red : id === "yellow" ? colors.orange : colors.green} selected={urgency === id} onPress={() => setUrgency(id)}/>)}</View>{urgency === "red" && <Text style={styles.emergency}>En cas de danger immédiat, appelez le 15 ou le 18.</Text>}<Field label="Commentaire" value={comment} onChangeText={setComment} multiline/><Field label="URL de la photo (facultatif)" value={imageUrl} onChangeText={setImage}/><Button title={busy ? "Envoi…" : "Envoyer le signalement"} disabled={busy} icon="send" onPress={send}/></ScrollView></SafeAreaView></Modal>;
+}
+
+function QuickReport({ visible, close }) { const [comment, setComment] = useState(""), [addressHint, setAddress] = useState(""), [urgency, setUrgency] = useState("yellow"), [coords, setCoords] = useState(initialCoords); const send = async () => { try { let reportCoords = coords; const p = await Location.requestForegroundPermissionsAsync(); if (p.status === "granted") { const l = await Location.getCurrentPositionAsync({}); reportCoords = [l.coords.longitude, l.coords.latitude]; setCoords(reportCoords); } await api.post("/reports/quick", { coordinates: reportCoords, comment, addressHint, urgency, needs: [] }); Alert.alert("Merci", "Le signalement a été transmis aux associations concernées."); close(); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }; return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.app}><ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Signalement rapide</Text><Pressable onPress={close}><Ionicons name="close" size={28}/></Pressable></View><Text style={styles.body}>Vous pouvez signaler une situation sans créer de compte.</Text><Field label="Adresse ou repère" value={addressHint} onChangeText={setAddress}/><Field label="Commentaire" value={comment} onChangeText={setComment} multiline/><View style={styles.wrap}>{[["green","Stable"],["yellow","Important"],["red","Critique"]].map(([id,n]) => <Chip key={id} title={n} selected={urgency === id} onPress={() => setUrgency(id)}/>)}</View><Button title="Envoyer le signalement" onPress={send}/></ScrollView></SafeAreaView></Modal>; }
+
+function Donations({ user }) { const [items, setItems] = useState([]), [summary, setSummary] = useState(null), [form, setForm] = useState(false); const year = new Date().getFullYear(); const load = useCallback(async () => { try { const results = await Promise.all([api.get("/donations"), api.get(`/donations/annual-summary/${year}`).catch(() => ({ data: null }))]); setItems(results[0].data); setSummary(results[1].data); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }, []); useEffect(() => { load(); }, [load]); return <ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Invendus alimentaires</Text>{user.role === "restaurant" && <Button title="Déclarer" icon="add" onPress={() => setForm(true)}/>}</View>{summary && <Card><Text style={styles.cardTitle}>Bilan {year}</Text><Text style={styles.body}>{summary.donationCount || 0} don(s) · {summary.totalValueEur || 0} € valorisés</Text></Card>}{items.map(d => <Card key={d._id}><Text style={styles.cardTitle}>{d.description}</Text><Text style={styles.body}>{d.quantity} · disponible le {date(d.availableDate)}</Text><Text style={styles.small}>{statusLabels[d.status]}{d.restaurant?.organizationName ? ` · ${d.restaurant.organizationName}` : ""}</Text>{d.pickupSlots?.map((p,i) => <Text key={i} style={styles.small}>Retrait : {p.start} - {p.end}</Text>)}{user.role === "association" && d.status === "assigned" && <Button title="Marquer comme collecté" onPress={async () => { await api.patch(`/donations/${d._id}/status`, { status: "collected" }); load(); }}/>}</Card>)}{items.length === 0 && <Text style={styles.small}>Aucun don.</Text>}<DonationForm visible={form} close={() => setForm(false)} created={load}/></ScrollView>; }
+function DonationForm({ visible, close, created }) { const [description, setDescription] = useState(""), [quantity, setQuantity] = useState(""), [availableDate, setDate] = useState(new Date().toISOString()), [photoUrl, setPhoto] = useState(""), [start, setStart] = useState(""), [end, setEnd] = useState(""); const send = async () => { try { await api.post("/donations", { description, quantity, availableDate, photoUrl: photoUrl || undefined, pickupSlots: start && end ? [{ start, end }] : [] }); Alert.alert("Don déclaré"); close(); created(); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }; return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.app}><ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Nouveau don</Text><Pressable onPress={close}><Ionicons name="close" size={28}/></Pressable></View><Field label="Description" value={description} onChangeText={setDescription} multiline/><Field label="Quantité" value={quantity} onChangeText={setQuantity} placeholder="ex. 20 repas"/><Field label="Date disponible (ISO)" value={availableDate} onChangeText={setDate}/><Field label="URL de photo" value={photoUrl} onChangeText={setPhoto}/><Field label="Début du créneau" value={start} onChangeText={setStart} placeholder="18:00"/><Field label="Fin du créneau" value={end} onChangeText={setEnd} placeholder="20:00"/><Button title="Publier le don" onPress={send}/></ScrollView></SafeAreaView></Modal>; }
+
+function Admin() { const [view, setView] = useState("dashboard"); return <ScrollView contentContainerStyle={styles.page}><Text style={styles.sectionTitle}>Administration</Text><ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={styles.wrap}>{[["dashboard","Vue d'ensemble"],["users","Utilisateurs"],["reports","Signalements"],["donations","Dons"],["blog","Blog"]].map(([id,t]) => <Chip key={id} title={t} selected={view === id} onPress={() => setView(id)}/>)}</View></ScrollView>{view === "dashboard" && <AdminDashboard/>}{view === "users" && <AdminUsers/>}{view === "reports" && <AdminReports/>}{view === "donations" && <AdminDonations/>}{view === "blog" && <AdminBlog/>}</ScrollView>; }
+function AdminDashboard() { const [d,setD] = useState(null),[pending,setPending]=useState([]); const load=useCallback(async()=>{const r=await Promise.all([api.get("/admin/dashboard"),api.get("/admin/organizations/pending")]);setD(r[0].data);setPending(r[1].data);},[]);useEffect(()=>{load();},[load]);return <>{d&&<View style={styles.grid}>{Object.entries(d).map(([k,v])=><Card key={k} style={styles.metric}><Text style={styles.metricValue}>{v}</Text><Text style={styles.small}>{k}</Text></Card>)}</View>}<Text style={styles.cardTitle}>Organisations en attente</Text>{pending.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.organizationName || x.email}</Text><Text style={styles.small}>{x.role} · {x.email}</Text><View style={styles.wrap}><Button title="Valider" onPress={async()=>{await api.patch(`/admin/organizations/${x._id}/status`,{status:"active"});load();}}/><Button title="Refuser" variant="danger" onPress={async()=>{await api.patch(`/admin/organizations/${x._id}/status`,{status:"rejected"});load();}}/></View></Card>)}</>; }
+function AdminUsers() { const [data,setData]=useState([]); const load=useCallback(()=>api.get("/admin/users").then(r=>setData(r.data)),[]);useEffect(()=>{load();},[load]);return <>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.organizationName || x.email}</Text><Text style={styles.small}>{x.role} · {x.status} · {x.email}</Text><Button title="Supprimer" variant="danger" onPress={()=>Alert.alert("Supprimer", "Supprimer cet utilisateur ?", [{text:"Annuler"},{text:"Supprimer",style:"destructive",onPress:async()=>{await api.delete(`/admin/users/${x._id}`);load();}}])}/></Card>)}</>; }
+function AdminReports() { const [data,setData]=useState([]); const load=useCallback(()=>api.get("/admin/reports").then(r=>setData(r.data)),[]);useEffect(()=>{load();},[load]);return <>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.type} · {statusLabels[x.status]}</Text><Text style={styles.small}>{x.addressHint} · {date(x.createdAt)}</Text><View style={styles.wrap}>{["new","in_progress","resolved","removed"].map(s=><Chip key={s} title={statusLabels[s]} selected={x.status===s} onPress={async()=>{await api.patch(`/reports/${x._id}`,{status:s});load();}}/>)}<Button title="Supprimer" variant="danger" onPress={async()=>{await api.delete(`/reports/${x._id}`);load();}}/></View></Card>)}</>; }
+function AdminDonations() { const [data,setData]=useState([]),[restaurants,setRestaurants]=useState([]);const y=new Date().getFullYear();useEffect(()=>{Promise.all([api.get(`/admin/donations?year=${y}`),api.get("/admin/users?role=restaurant&status=active")]).then(([d,r])=>{setData(d.data);setRestaurants(r.data);});},[]);return <><Text style={styles.cardTitle}>Valorisation IA</Text>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.description}</Text><Text style={styles.body}>{x.quantity} · {x.valuation?.estimatedValueEur || 0} €</Text><Text style={styles.small}>{x.restaurant?.organizationName || x.restaurant?.email}</Text></Card>)}<Text style={styles.cardTitle}>Reçus fiscaux {y}</Text>{restaurants.map(r=><Card key={r._id}><Text style={styles.cardTitle}>{r.organizationName || r.email}</Text><Text style={styles.small}>{r.email}</Text><Button title="Envoyer le reçu fiscal" onPress={async()=>{try{const {data:receipt}=await api.post(`/admin/donations/${r._id}/fiscal-receipt/${y}`);Alert.alert("Reçu envoyé", `${receipt.donationCount} don(s) · ${receipt.totalValueEur} €`);}catch(e){Alert.alert("Erreur",errorMessage(e));}}}/></Card>)}</>; }
+function AdminBlog() { const [posts,setPosts]=useState([]),[show,setShow]=useState(false),[f,setF]=useState({title:"",summary:"",content:"",imageUrl:"",category:"Actualité",author:"Équipe SOS CONNECT"});const load=useCallback(()=>api.get("/blog").then(r=>setPosts(r.data)),[]);useEffect(()=>{load();},[load]);const set=k=>v=>setF(q=>({...q,[k]:v}));return <><Button title={show?"Fermer":"Créer un article"} onPress={()=>setShow(x=>!x)}/>{show&&<Card><Field label="Titre" value={f.title} onChangeText={set("title")}/><Field label="Résumé" value={f.summary} onChangeText={set("summary")} multiline/><Field label="Contenu" value={f.content} onChangeText={set("content")} multiline/><Field label="Image URL" value={f.imageUrl} onChangeText={set("imageUrl")}/><Field label="Catégorie" value={f.category} onChangeText={set("category")}/><Field label="Auteur" value={f.author} onChangeText={set("author")}/><Button title="Publier" onPress={async()=>{try{await api.post("/blog",f);setShow(false);load();}catch(e){Alert.alert("Erreur",errorMessage(e));}}}/></Card>}{posts.map(p=><Card key={p._id}><Text style={styles.cardTitle}>{p.title}</Text><Text style={styles.small}>{p.category} · {p.author}</Text><Button title="Supprimer" variant="danger" onPress={async()=>{await api.delete(`/blog/${p._id}`);load();}}/></Card>)}</>; }
+function Confirm({ visible, title, text, confirm, close }) { return <Modal transparent visible={visible} animationType="fade"><View style={styles.overlay}><Card><Text style={styles.sectionTitle}>{title}</Text><Text style={styles.body}>{text}</Text><View style={styles.wrap}><Button title="Annuler" variant="secondary" onPress={close}/><Button title="Confirmer" variant="danger" onPress={confirm}/></View></Card></View></Modal>; }
+
+const colors={green:"#087B68",orange:"#E28A1D",red:"#C83F38"};
+const styles=StyleSheet.create({app:{flex:1,backgroundColor:"#f5faf7"},flex:{flex:1},center:{flex:1,justifyContent:"center",alignItems:"center",padding:28,gap:16,backgroundColor:"#f5faf7"},content:{flex:1},page:{padding:18,gap:14,paddingBottom:32},hero:{paddingVertical:38,gap:15},logo:{fontSize:22,fontWeight:"900",color:colors.green,letterSpacing:.5},topLogo:{fontSize:16,fontWeight:"900",color:colors.green},subtitle:{color:"#63786f",fontSize:13},heroTitle:{fontSize:37,lineHeight:43,fontWeight:"900",color:"#16352a"},section:{gap:12,marginTop:8},sectionTitle:{fontSize:24,fontWeight:"800",color:"#16352a"},card:{backgroundColor:"#fff",borderColor:"#dbe9e3",borderWidth:1,borderRadius:14,padding:15,gap:8,marginBottom:1},voiceCard:{backgroundColor:"#edf8f3"},cardTitle:{fontSize:16,fontWeight:"800",color:"#16352a"},body:{fontSize:14,lineHeight:21,color:"#456158"},small:{fontSize:12,lineHeight:18,color:"#667d74"},button:{minHeight:43,borderRadius:10,justifyContent:"center",paddingHorizontal:15,alignSelf:"flex-start"},buttonInside:{flexDirection:"row",alignItems:"center",gap:7},button_primary:{backgroundColor:colors.green},button_secondary:{backgroundColor:"#fff",borderColor:colors.green,borderWidth:1},button_danger:{backgroundColor:colors.red},buttonText:{color:"#fff",fontWeight:"800",fontSize:14},buttonTextSecondary:{color:colors.green},disabled:{opacity:.55},field:{gap:6},label:{fontSize:13,fontWeight:"800",color:"#36564a",marginTop:4},input:{backgroundColor:"#fff",borderColor:"#cfe0d9",borderWidth:1,borderRadius:10,paddingHorizontal:12,paddingVertical:11,fontSize:15,color:"#17352a"},textarea:{minHeight:92,textAlignVertical:"top"},tabs:{flexDirection:"row",gap:8,marginVertical:8},wrap:{flexDirection:"row",gap:8,flexWrap:"wrap",alignItems:"center"},chip:{borderWidth:1,borderColor:"#c7dcd3",backgroundColor:"#fff",paddingHorizontal:11,paddingVertical:8,borderRadius:20},chipText:{fontWeight:"700",fontSize:12,color:"#426258"},topbar:{paddingHorizontal:18,paddingVertical:12,backgroundColor:"#fff",borderBottomWidth:1,borderBottomColor:"#dbe9e3",flexDirection:"row",justifyContent:"space-between",alignItems:"center"},nav:{height:64,backgroundColor:"#fff",borderTopColor:"#dbe9e3",borderTopWidth:1,flexDirection:"row",justifyContent:"space-around"},navItem:{alignItems:"center",justifyContent:"center",gap:3,paddingHorizontal:7},navText:{fontSize:10,color:"#71827b",fontWeight:"700"},navTextActive:{color:colors.green},dangerLink:{color:colors.red,textAlign:"center",fontSize:12,padding:7,fontWeight:"700"},rowBetween:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:8},grid:{flexDirection:"row",flexWrap:"wrap",gap:10},metric:{width:"47%"},metricValue:{fontSize:28,fontWeight:"900",color:colors.green},urgency:{fontSize:11,fontWeight:"900"},reportImage:{width:"100%",height:150,borderRadius:9,marginTop:4},post:{width:245,marginRight:12},postImage:{height:110,borderRadius:9,backgroundColor:"#e5eee9"},overlay:{flex:1,backgroundColor:"rgba(0,0,0,.42)",padding:25,justifyContent:"center"}});
+styles.brandRow = { flexDirection: "row", alignItems: "center", gap: 10 };
+styles.brandMark = { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.green, alignItems: "center", justifyContent: "center", shadowColor: colors.green, shadowOpacity: 0.22, shadowRadius: 12, elevation: 4 };
+styles.heroImage = { width: "100%", height: 215, borderRadius: 24, resizeMode: "cover", marginTop: 4 };
