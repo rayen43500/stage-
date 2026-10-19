@@ -45,7 +45,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Erreur serveur." });
 });
 
-connectDb(process.env.MONGODB_URI || "mongodb+srv://chatpro435000_db_user:xvZJjfqTrj4vpbQv@cluster0.jn2yjzk.mongodb.net/")
+connectDb(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/sos-link")
   .then(() =>
     app.listen(port, "0.0.0.0", () =>
       console.log(`API running on http://0.0.0.0:${port}`)
