@@ -43,7 +43,8 @@ const colors = {
   borderLight: "#E8F2ED"
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL || "https://stage-cqe9.onrender.com/api";
 const api = axios.create({ baseURL: API_URL });
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem("sos-link-token");
