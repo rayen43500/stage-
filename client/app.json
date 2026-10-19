@@ -28,10 +28,13 @@
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -48,6 +51,11 @@
           "cameraPermission": "Solid'Aid a besoin d'accéder à l'appareil photo pour photographier la situation observée ou les denrées."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cb992bba-edf4-4192-8497-30b92778575a"
+      }
+    }
   }
 }
