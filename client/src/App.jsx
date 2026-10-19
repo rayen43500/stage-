@@ -386,6 +386,11 @@ export default function App() {
     setSession(data);
   };
 
+  const updateUser = async (updatedUser) => {
+    await AsyncStorage.setItem("sos-link-user", JSON.stringify(updatedUser));
+    setSession((s) => ({ ...s, user: updatedUser }));
+  };
+
   const logout = async () => {
     await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]);
     setSession(null);
@@ -404,7 +409,11 @@ export default function App() {
     <SafeAreaView style={styles.appContainer}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={[styles.mainShell, isLargeScreen && styles.mainShellLarge]}>
-        {session ? <PrivateApp session={session} logout={logout} /> : <PublicApp login={login} />}
+        {session ? (
+          <PrivateApp session={session} logout={logout} updateUser={updateUser} />
+        ) : (
+          <PublicApp login={login} />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -992,7 +1001,7 @@ function AuthScreen({ login, back }) {
    ESPACE CONNECTÉ (CITOYEN, ASSOCIATION, RESTAURANT, ADMIN)
 ───────────────────────────────────────────────────────────── */
 
-function PrivateApp({ session, logout }) {
+function PrivateApp({ session, logout, updateUser }) {
   const { user } = session;
   const [tab, setTab] = useState("home");
   const [quickReportOpen, setQuickReportOpen] = useState(false);
@@ -1010,9 +1019,13 @@ function PrivateApp({ session, logout }) {
         <View style={styles.topbarRight}>
           <Pressable onPress={() => setProfileModalOpen(true)} style={styles.userProfilePill}>
             <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>
-                {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
-              </Text>
+              {user.avatarUrl ? (
+                <Image source={{ uri: user.avatarUrl }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+              ) : (
+                <Text style={styles.userAvatarText}>
+                  {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
+                </Text>
+              )}
             </View>
             <View>
               <Text style={styles.userNamePill} numberOfLines={1}>
@@ -1078,7 +1091,13 @@ function PrivateApp({ session, logout }) {
       </View>
 
       <QuickReportModal visible={quickReportOpen} close={() => setQuickReportOpen(false)} />
-      <ProfileModal visible={profileModalOpen} user={user} logout={logout} close={() => setProfileModalOpen(false)} />
+      <ProfileModal
+        visible={profileModalOpen}
+        user={user}
+        updateUser={updateUser}
+        logout={logout}
+        close={() => setProfileModalOpen(false)}
+      />
     </View>
   );
 }

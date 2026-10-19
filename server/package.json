@@ -1,8 +1,11 @@
 {
-  "name": "sos-link-server",
+  "name": "solidaid-server",
   "version": "1.0.0",
   "type": "module",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",

@@ -1,0 +1,22 @@
+# ── Render Blueprint ─────────────────────────────────────────────────
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: solidaid-api
+    runtime: node
+    region: frankfurt          # EU – plus proche pour la France
+    plan: free                 # free tier (peut être upgradé plus tard)
+    rootDir: server            # Render ne build que le dossier server/
+    buildCommand: npm install
+    startCommand: node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"         # Port par défaut de Render
+      - key: MONGODB_URI
+        sync: false            # à définir manuellement dans le dashboard
+      - key: JWT_SECRET
+        generateValue: true    # Render génère un secret aléatoire
+      - key: CLIENT_URL
+        sync: false            # URL du client déployé
