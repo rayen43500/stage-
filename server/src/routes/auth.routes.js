@@ -80,6 +80,54 @@ router.post("/login", async (req, res) => {
 
 router.get("/me", auth, (req, res) => res.json({ user: req.user }));
 
+const profileUpdateSchema = z.object({
+  organizationName: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  avatarUrl: z.string().optional(),
+  services: z.array(z.string()).optional(),
+  radiusKm: z.number().min(1).max(100).optional(),
+  helloAssoUrl: z.string().optional()
+});
+
+router.patch("/profile", auth, async (req, res) => {
+  const data = profileUpdateSchema.parse(req.body);
+  const updates = {};
+  if (data.organizationName !== undefined) updates.organizationName = data.organizationName;
+  if (data.phone !== undefined) updates.phone = data.phone;
+  if (data.address !== undefined) updates.address = data.address;
+  if (data.avatarUrl !== undefined) updates.avatarUrl = data.avatarUrl;
+  if (data.services !== undefined && req.user.role === "association") updates.services = data.services;
+  if (data.helloAssoUrl !== undefined) updates.helloAssoUrl = data.helloAssoUrl;
+  if (data.radiusKm !== undefined && req.user.role === "association") {
+    updates["interventionZone.radiusKm"] = data.radiusKm;
+  }
+
+  const updated = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true });
+  res.json({ user: sanitize(updated) });
+});
+
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8)
+});
+
+router.patch("/password", auth, async (req, res) => {
+  const data = passwordChangeSchema.parse(req.body);
+  const user = await User.findById(req.user._id);
+  if (!user) return res.status(404).json({ message: "Utilisateur non trouvé." });
+
+  const valid = await user.comparePassword(data.currentPassword);
+  if (!valid) {
+    return res.status(400).json({ message: "Le mot de passe actuel est incorrect." });
+  }
+
+  user.passwordHash = await User.hashPassword(data.newPassword);
+  await user.save();
+
+  res.json({ message: "Mot de passe modifié avec succès." });
+});
+
 // RGPD: citizen can delete their own account + all reports they created
 router.delete("/me", auth, async (req, res) => {
   const userId = req.user._id;

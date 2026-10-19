@@ -174,6 +174,7 @@ async function seed() {
     addressHint: "Sous le porche face au cinéma",
     urgency: "yellow",
     needs: ["shelter", "clothes"],
+    imageUrl: "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80",
     individual: {
       apparentGender: "female",
       ageRange: "40–50 ans",
@@ -194,6 +195,7 @@ async function seed() {
     addressHint: "Près du pont du canal",
     urgency: "red",
     needs: ["food", "clothes", "hygiene"],
+    imageUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=600&q=80",
     group: {
       peopleCount: 15,
       majorityGender: "mixed",
@@ -230,6 +232,7 @@ async function seed() {
     addressHint: "Place de la République, côté Statue",
     urgency: "yellow",
     needs: ["food", "hygiene"],
+    imageUrl: "https://images.unsplash.com/photo-1593113598332-cd288d649433?auto=format&fit=crop&w=600&q=80",
     group: {
       peopleCount: 25,
       majorityGender: "mixed",

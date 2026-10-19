@@ -1,14 +1,48 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, Image, Modal, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View
+} from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import heroImage from "../assets/sos-link-hero.png";
+import logoImage from "../assets/image.png";
 
-// Pour tester sur un téléphone, définissez EXPO_PUBLIC_API_URL avec l'IP du PC,
-// par exemple http://192.168.1.20:5000/api (localhost vise le téléphone lui-même).
+// Palette officielle Solid'Aid
+const colors = {
+  primary: "#0F7D63",       // Principal Confiance
+  primaryDark: "#063D2E",   // Titres Contraste
+  mintSoft: "#E8F6F1",      // Fond Doux
+  mintSurface: "#CDEDDC",   // Surfaces Légères
+  background: "#F4FAF8",    // Fond neutre de l'application
+  cardBg: "#FFFFFF",        // Fond des cartes
+  success: "#22C55E",       // Succès / Validation
+  alert: "#F59E0B",         // Alerte / Urgence jaune
+  info: "#3B82F6",          // Information / Liens
+  danger: "#DC2626",        // Urgence critique rouge
+  textPrimary: "#063D2E",   // Texte foncé
+  textSecondary: "#4A6B60", // Texte secondaire
+  textMuted: "#8AA099",     // Texte grisé
+  border: "#D6E8E0",        // Bordure subtile
+  borderLight: "#E8F2ED"
+};
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
 const api = axios.create({ baseURL: API_URL });
 api.interceptors.request.use(async (config) => {
@@ -18,111 +52,808 @@ api.interceptors.request.use(async (config) => {
 });
 
 const needs = ["food", "shelter", "health", "clothes", "hygiene", "psychological", "other"];
-const labels = { food: "Alimentation", shelter: "Hébergement", health: "Soins", clothes: "Vêtements", hygiene: "Hygiène", psychological: "Soutien psychologique", other: "Autre" };
-const needIcons = { food: "restaurant", shelter: "home", health: "medkit", clothes: "shirt", hygiene: "water", psychological: "heart", other: "add-circle" };
-const statusLabels = { new: "Nouveau", in_progress: "En cours", resolved: "Résolu", removed: "Retiré", declared: "Déclaré", assigned: "Assigné", collected: "Collecté", cancelled: "Annulé" };
+const labels = {
+  food: "Alimentation",
+  shelter: "Hébergement",
+  health: "Soins médicaux",
+  clothes: "Vêtements",
+  hygiene: "Hygiène",
+  psychological: "Soutien psychologique",
+  other: "Autre"
+};
+const needIcons = {
+  food: "restaurant",
+  shelter: "home",
+  health: "medkit",
+  clothes: "shirt",
+  hygiene: "water",
+  psychological: "heart",
+  other: "add-circle"
+};
+const statusLabels = {
+  new: "Nouveau",
+  in_progress: "En cours",
+  resolved: "Résolu",
+  removed: "Retiré",
+  declared: "Déclaré",
+  assigned: "Assigné",
+  collected: "Collecté",
+  cancelled: "Annulé"
+};
 const services = needs.slice(0, -1);
 const initialCoords = [2.3522, 48.8566];
 
-function errorMessage(error) { return error.response?.data?.message || "Une erreur est survenue. Vérifiez la connexion au serveur."; }
-function date(value) { return value ? new Date(value).toLocaleDateString("fr-FR") : "—"; }
-function Button({ title, onPress, variant = "primary", disabled = false, icon }) { return <Pressable disabled={disabled} onPress={onPress} style={[styles.button, styles[`button_${variant}`], disabled && styles.disabled]}><View style={styles.buttonInside}>{icon && <Ionicons name={icon} size={16} color={variant === "secondary" ? colors.green : "#fff"}/>}<Text style={[styles.buttonText, variant === "secondary" && styles.buttonTextSecondary]}>{title}</Text></View></Pressable>; }
-function Field({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType = "default" }) { return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#8aa099" secureTextEntry={secureTextEntry} multiline={multiline} keyboardType={keyboardType} style={[styles.input, multiline && styles.textarea]}/></View>; }
-function Toggle({ label, value, onValueChange }) { return <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: "#edf3ef" }}><Text style={styles.body}>{label}</Text><Switch value={value} onValueChange={onValueChange} trackColor={{ false: "#cddbd5", true: "#8ccdb8" }} thumbColor={value ? colors.green : "#fff"}/></View>; }
-function Chip({ title, selected, onPress, color }) { return <Pressable onPress={onPress} style={[styles.chip, selected && { backgroundColor: color || colors.green, borderColor: color || colors.green }]}><Text style={[styles.chipText, selected && { color: "#fff" }]}>{title}</Text></Pressable>; }
-function NeedChip({ need, selected, onPress }) { return <Pressable onPress={onPress} style={[styles.chip, selected && { backgroundColor: colors.green, borderColor: colors.green }]}><View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><Ionicons name={needIcons[need]} size={14} color={selected ? "#fff" : colors.green}/><Text style={[styles.chipText, selected && { color: "#fff" }]}>{labels[need]}</Text></View></Pressable>; }
-function Card({ children, style }) { return <View style={[styles.card, style]}>{children}</View>; }
-
-export default function App() {
-  const [session, setSession] = useState(null); const [ready, setReady] = useState(false);
-  useEffect(() => { (async () => { const token = await AsyncStorage.getItem("sos-link-token"); const rawUser = await AsyncStorage.getItem("sos-link-user"); if (token && rawUser) { try { const { data } = await api.get("/auth/me"); setSession({ token, user: data.user }); await AsyncStorage.setItem("sos-link-user", JSON.stringify(data.user)); } catch { await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]); } } setReady(true); })(); }, []);
-  const login = async (data) => { await AsyncStorage.multiSet([["sos-link-token", data.token], ["sos-link-user", JSON.stringify(data.user)]]); setSession(data); };
-  const logout = async () => { await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]); setSession(null); };
-  if (!ready) return <SafeAreaView style={styles.center}><Text>Chargement de SOS CONNECT…</Text></SafeAreaView>;
-  return <SafeAreaView style={styles.app}><StatusBar barStyle="dark-content" backgroundColor="#F4F8F6"/>{session ? <PrivateApp session={session} logout={logout}/> : <PublicApp login={login}/>}</SafeAreaView>;
+function errorMessage(error) {
+  return error.response?.data?.message || "Une erreur est survenue. Vérifiez la connexion au serveur.";
+}
+function formatDate(value) {
+  return value ? new Date(value).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 }
 
-function PublicApp({ login }) {
-  const [page, setPage] = useState("landing");
-  return page === "auth" ? <AuthScreen login={login} back={() => setPage("landing")}/> : <Landing goAuth={() => setPage("auth")}/>;
-}
+/* ─────────────────────────────────────────────────────────────
+   COMPOSANTS DE BASE & DESIGN SYSTEM
+───────────────────────────────────────────────────────────── */
 
-function Landing({ goAuth }) {
-  const [posts, setPosts] = useState([]);
-  const [quick, setQuick] = useState(false);
-  const [privacy, setPrivacy] = useState(false);
-  useEffect(() => { api.get("/blog").then(({ data }) => setPosts(data)).catch(() => {}); }, []);
+function BrandLogo({ size = "default" }) {
+  const isLarge = size === "large";
   return (
-    <ScrollView contentContainerStyle={styles.page}>
-      <View style={styles.hero}>
-        <View style={styles.brandRow}>
-          <View style={styles.brandMark}><Ionicons name="people" size={23} color="#fff"/></View>
-          <View>
-            <Text style={styles.logo}>SOS CONNECT</Text>
-            <Text style={styles.subtitle}>Solidarité · Orientation · Soutien</Text>
-          </View>
-          <Ionicons name="notifications-outline" size={22} color={colors.green} style={styles.heroBell}/>
-        </View>
-        <Image source={heroImage} style={styles.heroImage}/>
-        <Text style={styles.heroTitle}>Signaler, orienter et agir ensemble.</Text>
-        <Text style={styles.body}>Une plateforme qui relie citoyens, associations et commerçants solidaires.</Text>
-        <Button title="Signalement rapide" icon="megaphone" onPress={() => setQuick(true)}/>
-        <Button title="Connexion / Inscription" variant="secondary" icon="person" onPress={goAuth}/>
-        <View style={styles.featureGrid}>
-          <Feature icon="people" title="Associations" text="près de vous"/>
-          <Feature icon="location" title="Carte" text="de votre zone"/>
-          <Feature icon="heart" title="Soutien" text="et orientation"/>
-          <Feature icon="chatbubble" title="Suivi" text="du signalement"/>
-        </View>
+    <View style={styles.brandContainer}>
+      <View style={[styles.brandLogoBox, isLarge && { width: 56, height: 56, borderRadius: 16 }]}>
+        <Image
+          source={logoImage}
+          style={[styles.brandLogoImage, isLarge && { width: 50, height: 50 }]}
+          resizeMode="contain"
+        />
       </View>
-      <Section title="Comment ça marche">
-        <Info title="1. Signalez" text="Décrivez une situation et sa localisation."/>
-        <Info title="2. Les associations sont alertées" text="Les équipes locales reçoivent les signalements de leur zone."/>
-        <Info title="3. Suivez l'action" text="La réponse est coordonnée depuis l'application."/>
-      </Section>
-      {posts.length > 0 && (
-        <Section title="Actualités">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {posts.map(p => (
-              <Card key={p._id} style={styles.post}>
-                <Image source={{ uri: p.imageUrl }} style={styles.postImage}/>
-                <Text style={styles.cardTitle}>{p.title}</Text>
-                <Text style={styles.small}>{p.summary}</Text>
-              </Card>
-            ))}
-          </ScrollView>
-        </Section>
-      )}
-      <View style={{ alignItems: "center", paddingVertical: 14 }}>
-        <Pressable onPress={() => setPrivacy(true)}>
-          <Text style={[styles.small, { color: colors.green, textDecorationLine: "underline", fontWeight: "700" }]}>
-            Politique de Confidentialité (Google Play & RGPD)
+      <View>
+        <Text style={[styles.brandText, isLarge && { fontSize: 24 }]}>Solid'Aid</Text>
+        <Text style={styles.brandTagline}>Solidarité · Orientation · Entraide</Text>
+      </View>
+    </View>
+  );
+}
+
+function PrimaryButton({ title, onPress, variant = "primary", disabled = false, icon, style }) {
+  const isSecondary = variant === "secondary";
+  const isWhite = variant === "white";
+  const isDanger = variant === "danger";
+
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.primaryButton,
+        isSecondary && styles.buttonSecondary,
+        isWhite && styles.buttonWhite,
+        isDanger && styles.buttonDanger,
+        disabled && { opacity: 0.6 },
+        style
+      ]}
+    >
+      <View style={styles.buttonContent}>
+        {icon && (
+          <Ionicons
+            name={icon}
+            size={18}
+            color={isWhite ? colors.primary : isSecondary ? colors.primary : "#FFFFFF"}
+          />
+        )}
+        <Text
+          style={[
+            styles.primaryButtonText,
+            (isSecondary || isWhite) && styles.buttonTextSecondary,
+            isDanger && { color: "#FFFFFF" }
+          ]}
+        >
+          {title}
+        </Text>
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={isWhite ? colors.primary : isSecondary ? colors.primary : "#FFFFFF"}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
+function InputField({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType = "default", icon }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isSecure = secureTextEntry && !showPassword;
+
+  return (
+    <View style={styles.inputGroup}>
+      {label && <Text style={styles.inputLabel}>{label}</Text>}
+      <View style={[styles.inputWrapper, multiline && { minHeight: 96, alignItems: "flex-start", paddingTop: 12 }]}>
+        {icon && <Ionicons name={icon} size={20} color={colors.textMuted} style={styles.inputIcon} />}
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
+          secureTextEntry={isSecure}
+          multiline={multiline}
+          keyboardType={keyboardType}
+          style={[styles.inputField, multiline && { textAlignVertical: "top" }]}
+        />
+        {secureTextEntry && (
+          <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function StatCard({ title, value, icon, subtitle, color = colors.primary }) {
+  return (
+    <View style={styles.kpiCard}>
+      <View style={[styles.kpiIconBox, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={22} color={color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.kpiValue, { color }]}>{value}</Text>
+        <Text style={styles.kpiTitle}>{title}</Text>
+        {subtitle && <Text style={styles.kpiSubtitle}>{subtitle}</Text>}
+      </View>
+    </View>
+  );
+}
+
+function ImageLightboxModal({ visible, image, close }) {
+  if (!image) return null;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+      <View style={styles.lightboxOverlay}>
+        <SafeAreaView style={styles.lightboxHeader}>
+          <Pressable onPress={close} style={styles.lightboxCloseBtn}>
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+          <Text style={styles.lightboxTitle} numberOfLines={1}>
+            {image.title || "Photo"}
           </Text>
+          <View style={{ width: 40 }} />
+        </SafeAreaView>
+        <Pressable onPress={close} style={styles.lightboxBody}>
+          <Image source={{ uri: image.url }} style={styles.lightboxImage} />
         </Pressable>
       </View>
-      <QuickReport visible={quick} close={() => setQuick(false)}/>
-      <PrivacyModal visible={privacy} close={() => setPrivacy(false)}/>
+    </Modal>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CARTE INTERACTIVE (LEAFLET / OPENSTREETMAP)
+───────────────────────────────────────────────────────────── */
+
+function ReportsMap({ reports = [], height = 340, onSelectReport }) {
+  if (Platform.OS === "web") {
+    const validReports = reports.filter(
+      (r) => r.location?.coordinates && r.location.coordinates.length === 2
+    );
+
+    const markersData = validReports.map((r) => ({
+      id: r._id,
+      lng: r.location.coordinates[0],
+      lat: r.location.coordinates[1],
+      type: r.type,
+      urgency: r.urgency || "yellow",
+      status: r.status,
+      address: r.addressHint || "Localisation GPS",
+      imageUrl: r.imageUrl || null,
+      comment: (r.comment || "").replace(/"/g, "&quot;").replace(/\n/g, " "),
+      needs: (r.needs || []).map((n) => labels[n] || n).join(", ")
+    }));
+
+    const leafletHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #map { height: 100%; width: 100%; }
+    .custom-pin {
+      width: 36px; height: 36px; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); display: flex; align-items: center; justify-content: center;
+      border: 2px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      cursor: pointer; transition: transform 0.15s ease;
+    }
+    .custom-pin:hover { transform: rotate(-45deg) scale(1.15); }
+    .custom-pin span { transform: rotate(45deg); color: white; font-size: 16px; }
+    .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.18); padding: 4px; }
+    .leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.4; color: #1e293b; }
+    .popup-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .popup-title { font-weight: 800; font-size: 14px; color: #063D2E; }
+    .popup-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 800; color: white; text-transform: uppercase; }
+    .popup-meta { color: #64748b; font-size: 12px; margin: 4px 0; }
+    .popup-needs { margin-top: 6px; padding: 4px 8px; background: #e8f6f1; border-radius: 8px; color: #0f7d63; font-weight: 700; font-size: 11px; }
+    .popup-btn { display: inline-block; margin-top: 10px; background: #0f7d63; color: white; text-decoration: none; padding: 7px 12px; border-radius: 9px; font-size: 12px; font-weight: 700; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const reports = ${JSON.stringify(markersData)};
+    const center = reports.length > 0 ? [reports[0].lat, reports[0].lng] : [48.8700, 2.3600];
+    const map = L.map('map', { zoomControl: true }).setView(center, reports.length > 0 ? 14 : 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const colors = { red: '#DC2626', yellow: '#F59E0B', green: '#0F7D63' };
+    const bounds = [];
+
+    reports.forEach(r => {
+      const bg = colors[r.urgency] || colors.yellow;
+      const icon = L.divIcon({
+        className: '',
+        html: '<div class="custom-pin" style="background:' + bg + ';"><span>' + (r.type === 'group' ? '👥' : '👤') + '</span></div>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 36],
+        popupAnchor: [0, -36]
+      });
+      const marker = L.marker([r.lat, r.lng], { icon }).addTo(map);
+      bounds.push([r.lat, r.lng]);
+      const statusLabel = r.status === 'resolved' ? 'Résolu' : r.status === 'in_progress' ? 'En cours' : 'Nouveau';
+      const gmapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + r.lat + ',' + r.lng;
+      marker.bindPopup(
+        '<div class="popup-header">' +
+          '<span class="popup-title">' + (r.type === 'group' ? '👥 Groupe' : '👤 Personne seule') + '</span>' +
+          '<span class="popup-badge" style="background:' + bg + ';">' + (r.urgency === 'red' ? 'Critique' : r.urgency === 'yellow' ? 'Important' : 'Stable') + '</span>' +
+        '</div>' +
+        (r.imageUrl ? '<div style="margin:8px 0;border-radius:10px;overflow:hidden;height:120px;"><img src="' + r.imageUrl + '" style="width:100%;height:100%;object-fit:cover;" /></div>' : '') +
+        '<div class="popup-meta">📍 ' + r.address + '</div>' +
+        '<div class="popup-meta">Statut : <b>' + statusLabel + '</b></div>' +
+        (r.comment ? '<div style="margin:4px 0;color:#334155;font-style:italic;">« ' + r.comment + ' »</div>' : '') +
+        (r.needs ? '<div class="popup-needs">Besoins : ' + r.needs + '</div>' : '') +
+        '<a href="' + gmapsUrl + '" target="_blank" class="popup-btn">🧭 Ouvrir Itinéraire GPS</a>'
+      );
+    });
+
+    if (bounds.length > 1) {
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  </script>
+</body>
+</html>`;
+
+    return (
+      <View style={[styles.mapContainer, { height }]}>
+        <iframe
+          srcDoc={leafletHtml}
+          style={{ width: "100%", height: "100%", border: "none" }}
+          title="Carte interactive Solid'Aid"
+        />
+      </View>
+    );
+  }
+
+  // Fallback mobile natif avec bouton d'ouverture Waze / Google Maps
+  return (
+    <View style={[styles.mapNativeCard, { height }]}>
+      <Ionicons name="map" size={44} color={colors.primary} />
+      <Text style={styles.cardTitle}>Carte du secteur ({reports.length} signalements)</Text>
+      <Text style={styles.bodyMuted}>Points géolocalisés en temps réel sur Paris & IDF</Text>
+      <PrimaryButton
+        title="Ouvrir dans Google Maps"
+        icon="navigate-outline"
+        variant="white"
+        onPress={() => Linking.openURL("https://www.google.com/maps")}
+      />
+    </View>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   APPLICATION PRINCIPALE & SESSIONS
+───────────────────────────────────────────────────────────── */
+
+export default function App() {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width > 720;
+  const [session, setSession] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const token = await AsyncStorage.getItem("sos-link-token");
+      const rawUser = await AsyncStorage.getItem("sos-link-user");
+      if (token && rawUser) {
+        try {
+          const { data } = await api.get("/auth/me");
+          setSession({ token, user: data.user });
+          await AsyncStorage.setItem("sos-link-user", JSON.stringify(data.user));
+        } catch {
+          await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]);
+        }
+      }
+      setReady(true);
+    })();
+  }, []);
+
+  const login = async (data) => {
+    await AsyncStorage.multiSet([
+      ["sos-link-token", data.token],
+      ["sos-link-user", JSON.stringify(data.user)]
+    ]);
+    setSession(data);
+  };
+
+  const logout = async () => {
+    await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]);
+    setSession(null);
+  };
+
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.loadingScreen}>
+        <BrandLogo size="large" />
+        <Text style={styles.loadingText}>Chargement de Solid'Aid…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.appContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <View style={[styles.mainShell, isLargeScreen && styles.mainShellLarge]}>
+        {session ? <PrivateApp session={session} logout={logout} /> : <PublicApp login={login} />}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ESPACE PUBLIC (ACCUEIL & AUTH)
+───────────────────────────────────────────────────────────── */
+
+function PublicApp({ login }) {
+  const [screen, setScreen] = useState("landing");
+  const [quickReportOpen, setQuickReportOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  return (
+    <View style={styles.flex}>
+      {screen === "auth" ? (
+        <AuthScreen login={login} back={() => setScreen("landing")} />
+      ) : (
+        <LandingScreen
+          goAuth={() => setScreen("auth")}
+          openQuickReport={() => setQuickReportOpen(true)}
+          openPrivacy={() => setPrivacyOpen(true)}
+        />
+      )}
+      <QuickReportModal visible={quickReportOpen} close={() => setQuickReportOpen(false)} />
+      <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
+    </View>
+  );
+}
+
+function LandingScreen({ goAuth, openQuickReport, openPrivacy }) {
+  const [posts, setPosts] = useState([]);
+
+  useEffect(() => {
+    api.get("/blog").then(({ data }) => setPosts(data)).catch(() => {});
+  }, []);
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      {/* Top Header */}
+      <View style={styles.headerRow}>
+        <BrandLogo />
+        <Pressable style={styles.bellButton} onPress={openPrivacy}>
+          <Ionicons name="notifications-outline" size={22} color={colors.primaryDark} />
+        </Pressable>
+      </View>
+
+      {/* Hero Visual Card */}
+      <View style={styles.heroCard}>
+        <Image source={heroImage} style={styles.heroImageVisual} />
+        <View style={styles.heroOverlay}>
+          <Text style={styles.heroMainTitle}>Signaler, orienter et agir ensemble.</Text>
+          <Text style={styles.heroMainSubtitle}>
+            Une plateforme qui relie citoyens, associations et commerçants solidaires.
+          </Text>
+        </View>
+      </View>
+
+      {/* Main Action CTAs (Style Screen 1 du mockup) */}
+      <View style={styles.ctaGroup}>
+        <PrimaryButton
+          title="Signalement rapide"
+          icon="megaphone"
+          onPress={openQuickReport}
+        />
+        <PrimaryButton
+          title="Connexion / Inscription"
+          icon="person"
+          variant="white"
+          onPress={goAuth}
+        />
+      </View>
+
+      {/* 4 Feature Cards (Pastel Highlights) */}
+      <View style={styles.featureGrid}>
+        <View style={[styles.featureCard, { backgroundColor: "#E8F6F1" }]}>
+          <View style={[styles.featureIconCircle, { backgroundColor: "#0F7D63" }]}>
+            <Ionicons name="people" size={20} color="#FFFFFF" />
+          </View>
+          <Text style={styles.featureCardTitle}>Associations</Text>
+          <Text style={styles.featureCardText}>près de vous</Text>
+        </View>
+
+        <View style={[styles.featureCard, { backgroundColor: "#EFF6FF" }]}>
+          <View style={[styles.featureIconCircle, { backgroundColor: "#3B82F6" }]}>
+            <Ionicons name="location" size={20} color="#FFFFFF" />
+          </View>
+          <Text style={styles.featureCardTitle}>Carte</Text>
+          <Text style={styles.featureCardText}>de votre zone</Text>
+        </View>
+
+        <View style={[styles.featureCard, { backgroundColor: "#FEF2F2" }]}>
+          <View style={[styles.featureIconCircle, { backgroundColor: "#EF4444" }]}>
+            <Ionicons name="heart" size={20} color="#FFFFFF" />
+          </View>
+          <Text style={styles.featureCardTitle}>Soutien</Text>
+          <Text style={styles.featureCardText}>et orientation</Text>
+        </View>
+
+        <View style={[styles.featureCard, { backgroundColor: "#F5F3FF" }]}>
+          <View style={[styles.featureIconCircle, { backgroundColor: "#8B5CF6" }]}>
+            <Ionicons name="chatbubbles" size={20} color="#FFFFFF" />
+          </View>
+          <Text style={styles.featureCardTitle}>Suivi</Text>
+          <Text style={styles.featureCardText}>du signalement</Text>
+        </View>
+      </View>
+
+      {/* Solidarité Banner */}
+      <View style={styles.bannerCard}>
+        <View style={styles.bannerIconBox}>
+          <Ionicons name="school" size={22} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.bannerTitle}>Solidarité & Entraide</Text>
+          <Text style={styles.bannerText}>Coordination citoyenne active en Île-de-France.</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+      </View>
+
+      {/* Actualités */}
+      {posts.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionHeaderTitle}>Actualités solidaires</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20, paddingHorizontal: 20 }}>
+            {posts.map((p) => (
+              <View key={p._id} style={styles.newsCard}>
+                {p.imageUrl ? (
+                  <Image source={{ uri: p.imageUrl }} style={styles.newsImage} />
+                ) : (
+                  <View style={[styles.newsImage, { backgroundColor: colors.mintSoft, justifyContent: "center", alignItems: "center" }]}>
+                    <Ionicons name="newspaper-outline" size={28} color={colors.primary} />
+                  </View>
+                )}
+                <View style={{ padding: 12 }}>
+                  <Text style={styles.newsCardTitle} numberOfLines={2}>{p.title}</Text>
+                  <Text style={styles.newsCardSummary} numberOfLines={2}>{p.summary}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* RGPD Footer */}
+      <Pressable onPress={openPrivacy} style={styles.legalFooterLink}>
+        <Ionicons name="shield-checkmark" size={15} color={colors.primary} />
+        <Text style={styles.legalFooterText}>Politique de Confidentialité (Google Play & RGPD)</Text>
+      </Pressable>
     </ScrollView>
   );
 }
-function Feature({ icon, title, text }) { return <View style={styles.feature}><Ionicons name={icon} size={21} color={colors.green}/><Text style={styles.featureTitle}>{title}</Text><Text style={styles.featureText}>{text}</Text></View>; }
-function Info({ title, text }) { return <Card><Text style={styles.cardTitle}>{title}</Text><Text style={styles.body}>{text}</Text></Card>; }
-function Section({ title, children }) { return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>; }
+
+/* ─────────────────────────────────────────────────────────────
+   MODAL SIGNALEMENT RAPIDE (MATCH SCREEN 2 DU MOCKUP)
+───────────────────────────────────────────────────────────── */
+
+function QuickReportModal({ visible, close }) {
+  const [step, setStep] = useState(1);
+  const [category, setCategory] = useState("social");
+  const [urgency, setUrgency] = useState("yellow");
+  const [comment, setComment] = useState("");
+  const [addressHint, setAddressHint] = useState("");
+  const [imageData, setImageData] = useState("");
+  const [coords, setCoords] = useState(initialCoords);
+  const [busy, setBusy] = useState(false);
+
+  const categories = [
+    { id: "social", label: "Problème social", icon: "warning", color: "#F59E0B" },
+    { id: "food", label: "Faim / Alimentation", icon: "restaurant", color: "#10B981" },
+    { id: "shelter", label: "Hébergement", icon: "home", color: "#3B82F6" },
+    { id: "health", label: "Urgence médicale", icon: "medkit", color: "#EF4444" },
+    { id: "individual", label: "Personne seule", icon: "person", color: "#8B5CF6" },
+    { id: "other", label: "Autre", icon: "ellipsis-horizontal", color: "#64748B" }
+  ];
+
+  const locate = async () => {
+    try {
+      const p = await Location.requestForegroundPermissionsAsync();
+      if (p.status !== "granted") {
+        return Alert.alert("Localisation", "Veuillez saisir l'adresse manuellement.");
+      }
+      const loc = await Location.getCurrentPositionAsync({});
+      setCoords([loc.coords.longitude, loc.coords.latitude]);
+      setAddressHint("Position GPS détectée");
+      Alert.alert("Succès", "Votre position actuelle a été enregistrée.");
+    } catch {
+      Alert.alert("GPS", "Position temporaire définie.");
+    }
+  };
+
+  const takePhoto = async () => {
+    const p = await ImagePicker.requestCameraPermissionsAsync();
+    if (!p.granted) return Alert.alert("Caméra", "Autorisez la caméra pour prendre une photo.");
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: true });
+    if (!res.canceled && res.assets?.[0]?.base64) {
+      setImageData(`data:image/jpeg;base64,${res.assets[0].base64}`);
+    }
+  };
+
+  const pickImage = async () => {
+    const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!p.granted) return Alert.alert("Galerie", "Autorisez l'accès à la galerie photo.");
+    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: true });
+    if (!res.canceled && res.assets?.[0]?.base64) {
+      setImageData(`data:image/jpeg;base64,${res.assets[0].base64}`);
+    }
+  };
+
+  const submit = async () => {
+    if (!comment.trim()) {
+      return Alert.alert("Description requise", "Décrivez brièvement la situation observée.");
+    }
+    setBusy(true);
+    try {
+      await api.post("/reports/quick", {
+        coordinates: coords,
+        addressHint: addressHint.trim() || undefined,
+        comment: comment.trim(),
+        imageUrl: imageData || undefined,
+        urgency,
+        needs: [category === "social" ? "shelter" : category]
+      });
+      Alert.alert("Signalement transmis", "Les associations locales de votre zone ont été alertées.");
+      close();
+      setStep(1);
+      setComment("");
+      setImageData("");
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide">
+      <SafeAreaView style={styles.modalSafeArea}>
+        {/* Modal Header */}
+        <View style={styles.modalTopNav}>
+          <Pressable onPress={close} style={styles.modalCloseBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modalHeaderTitle}>Signalement rapide</Text>
+            <Text style={styles.modalHeaderSubtitle}>Décrivez la situation pour alerter les équipes locales.</Text>
+          </View>
+        </View>
+
+        {/* Stepper (1 - 2 - 3) */}
+        <View style={styles.stepperRow}>
+          {[1, 2, 3].map((num) => (
+            <React.Fragment key={num}>
+              <View style={[styles.stepCircle, step >= num && styles.stepCircleActive]}>
+                <Text style={[styles.stepNumber, step >= num && styles.stepNumberActive]}>{num}</Text>
+              </View>
+              {num < 3 && <View style={[styles.stepLine, step > num && styles.stepLineActive]} />}
+            </React.Fragment>
+          ))}
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+          {step === 1 && (
+            <View style={{ gap: 16 }}>
+              <Text style={styles.formSectionLabel}>Type de signalement</Text>
+              <View style={styles.categoryGrid}>
+                {categories.map((c) => {
+                  const isSelected = category === c.id;
+                  return (
+                    <Pressable
+                      key={c.id}
+                      onPress={() => setCategory(c.id)}
+                      style={[
+                        styles.categoryTile,
+                        isSelected && { borderColor: c.color, backgroundColor: `${c.color}15`, borderWidth: 2 }
+                      ]}
+                    >
+                      <View style={[styles.categoryIconCircle, { backgroundColor: `${c.color}25` }]}>
+                        <Ionicons name={c.icon} size={22} color={c.color} />
+                      </View>
+                      <Text style={styles.categoryTileText}>{c.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.formSectionLabel}>Niveau d'urgence</Text>
+              <View style={styles.urgencyRow}>
+                {[
+                  { id: "green", label: "Stable", desc: "Pas de danger direct", color: colors.success },
+                  { id: "yellow", label: "Important", desc: "Besoin d'aide rapide", color: colors.alert },
+                  { id: "red", label: "Critique", desc: "Urgence médicale / 15", color: colors.danger }
+                ].map((u) => (
+                  <Pressable
+                    key={u.id}
+                    onPress={() => setUrgency(u.id)}
+                    style={[
+                      styles.urgencyOption,
+                      urgency === u.id && { borderColor: u.color, backgroundColor: `${u.color}12`, borderWidth: 2 }
+                    ]}
+                  >
+                    <Text style={[styles.urgencyOptionTitle, { color: u.color }]}>{u.label}</Text>
+                    <Text style={styles.urgencyOptionDesc}>{u.desc}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <PrimaryButton title="Suivant" onPress={() => setStep(2)} />
+            </View>
+          )}
+
+          {step === 2 && (
+            <View style={{ gap: 16 }}>
+              <InputField
+                label="Description"
+                value={comment}
+                onChangeText={setComment}
+                placeholder="Décrivez ce que vous observez : personne seule, vêtements, couverture..."
+                multiline
+              />
+
+              <View>
+                <Text style={styles.inputLabel}>Localisation</Text>
+                <Pressable onPress={locate} style={styles.gpsSelectButton}>
+                  <View style={styles.gpsIconCircle}>
+                    <Ionicons name="location" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.gpsSelectText}>
+                    {addressHint || "Utiliser ma position actuelle"}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                </Pressable>
+              </View>
+
+              <InputField
+                label="Repère ou adresse manuelle (facultatif)"
+                value={addressHint}
+                onChangeText={setAddressHint}
+                placeholder="Ex. Métro Bonsergent, face au cinéma..."
+                icon="navigate-outline"
+              />
+
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable onPress={() => setStep(1)} style={styles.backStepButton}>
+                  <Text style={styles.backStepButtonText}>Retour</Text>
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton title="Suivant" onPress={() => setStep(3)} />
+                </View>
+              </View>
+            </View>
+          )}
+
+          {step === 3 && (
+            <View style={{ gap: 16 }}>
+              <Text style={styles.formSectionLabel}>Ajouter des médias (optionnel)</Text>
+              <View style={styles.mediaButtonsRow}>
+                <Pressable onPress={takePhoto} style={styles.mediaBtn}>
+                  <Ionicons name="camera-outline" size={24} color={colors.primary} />
+                  <Text style={styles.mediaBtnText}>Photo</Text>
+                </Pressable>
+                <Pressable onPress={pickImage} style={styles.mediaBtn}>
+                  <Ionicons name="images-outline" size={24} color={colors.primary} />
+                  <Text style={styles.mediaBtnText}>Galerie</Text>
+                </Pressable>
+              </View>
+
+              {imageData ? (
+                <View style={styles.imagePreviewWrap}>
+                  <Image source={{ uri: imageData }} style={styles.imagePreview} />
+                  <Pressable onPress={() => setImageData("")} style={styles.removeImageBadge}>
+                    <Ionicons name="close" size={18} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View style={styles.summaryNotice}>
+                <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                <Text style={styles.summaryNoticeText}>
+                  Votre signalement est transmis directement et confidentiellement aux associations locales habilitées.
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <Pressable onPress={() => setStep(2)} style={styles.backStepButton}>
+                  <Text style={styles.backStepButtonText}>Retour</Text>
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton
+                    title={busy ? "Envoi en cours…" : "Envoyer le signalement"}
+                    disabled={busy}
+                    onPress={submit}
+                  />
+                </View>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN DE CONNEXION & INSCRIPTION (MATCH SCREEN 3 DU MOCKUP)
+───────────────────────────────────────────────────────────── */
 
 function AuthScreen({ login, back }) {
-  const [mode, setMode] = useState("login"), [role, setRole] = useState("citizen"), [busy, setBusy] = useState(false), [coords, setCoords] = useState(initialCoords);
-  const [form, setForm] = useState({ email: "", password: "", organizationName: "", sirenSiret: "", address: "", phone: "", radiusKm: "8", helloAssoUrl: "" });
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [privacy, setPrivacy] = useState(false);
-  const set = (key) => (value) => setForm(f => ({ ...f, [key]: value }));
-  const locate = async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return Alert.alert("Localisation", "Autorisez la localisation pour remplir les coordonnées."); const p = await Location.getCurrentPositionAsync({}); setCoords([p.coords.longitude, p.coords.latitude]); Alert.alert("Position détectée"); };
+  const [mode, setMode] = useState("login");
+  const [role, setRole] = useState("citizen");
+  const [busy, setBusy] = useState(false);
+  const [coords, setCoords] = useState(initialCoords);
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+    organizationName: "",
+    sirenSiret: "",
+    address: "",
+    phone: "",
+    radiusKm: "5"
+  });
+  const [selectedServices, setSelectedServices] = useState(["food", "shelter"]);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
   const submit = async () => {
-    if (!form.email || !form.password) return Alert.alert("Champs requis", "Saisissez l'adresse e-mail et le mot de passe.");
+    if (!form.email || !form.password) {
+      return Alert.alert("Champs requis", "Saisissez votre e-mail et mot de passe.");
+    }
     setBusy(true);
     try {
       let payload = { email: form.email, password: form.password };
       if (mode === "register") {
-        payload = { ...payload, role, consentRgpd: true, organizationName: form.organizationName || undefined, sirenSiret: form.sirenSiret || undefined, address: form.address || undefined, phone: form.phone || undefined, helloAssoUrl: form.helloAssoUrl || undefined, services: role === "association" ? selectedServices : undefined, interventionZone: role === "citizen" ? undefined : { center: { coordinates: coords }, radiusKm: role === "association" ? Number(form.radiusKm || 8) : 0 } };
+        payload = {
+          ...payload,
+          role,
+          consentRgpd: true,
+          organizationName: form.organizationName || undefined,
+          sirenSiret: form.sirenSiret || undefined,
+          address: form.address || undefined,
+          phone: form.phone || undefined,
+          services: role === "association" ? selectedServices : undefined,
+          interventionZone:
+            role === "association"
+              ? { center: { coordinates: coords }, radiusKm: Number(form.radiusKm || 5) }
+              : undefined
+        };
       }
       const { data } = await api.post(`/auth/${mode === "login" ? "login" : "register"}`, payload);
       await login(data);
@@ -132,304 +863,1570 @@ function AuthScreen({ login, back }) {
       setBusy(false);
     }
   };
+
   return (
-    <ScrollView contentContainerStyle={styles.page}>
-      <Pressable onPress={back}><Text style={styles.link}>← Accueil</Text></Pressable>
-      <Text style={styles.logo}>SOS CONNECT</Text>
-      <View style={styles.tabs}>
-        <Chip title="Connexion" selected={mode === "login"} onPress={() => setMode("login")}/>
-        <Chip title="Inscription" selected={mode === "register"} onPress={() => setMode("register")}/>
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      <Pressable onPress={back} style={styles.backArrowBtn}>
+        <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
+      </Pressable>
+
+      <View style={{ alignItems: "center", marginVertical: 12 }}>
+        <BrandLogo size="large" />
       </View>
+
+      <Text style={styles.authTitle}>{mode === "login" ? "Connexion" : "Créer un compte"}</Text>
+      <Text style={styles.authSubtitle}>
+        {mode === "login"
+          ? "Accédez à votre espace Solid'Aid."
+          : "Rejoignez le réseau solidaire citoyen et associatif Solid'Aid."}
+      </Text>
+
+      {/* Tabs Connexion / Inscription */}
+      <View style={styles.authTabs}>
+        <Pressable
+          onPress={() => setMode("login")}
+          style={[styles.authTabItem, mode === "login" && styles.authTabItemActive]}
+        >
+          <Text style={[styles.authTabText, mode === "login" && styles.authTabTextActive]}>Connexion</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setMode("register")}
+          style={[styles.authTabItem, mode === "register" && styles.authTabItemActive]}
+        >
+          <Text style={[styles.authTabText, mode === "register" && styles.authTabTextActive]}>Inscription</Text>
+        </Pressable>
+      </View>
+
       {mode === "register" && (
-        <>
-          <Text style={styles.label}>Type de compte</Text>
-          <View style={styles.wrap}>
-            {[["citizen","Citoyen"],["association","Association"],["restaurant","Restaurateur"]].map(([id, name]) => (
-              <Chip key={id} title={name} selected={role === id} onPress={() => setRole(id)}/>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={styles.inputLabel}>Type de compte</Text>
+          <View style={styles.rolePicker}>
+            {[
+              ["citizen", "Citoyen", "person-outline"],
+              ["association", "Association", "people-outline"],
+              ["restaurant", "Commerce solidaire", "restaurant-outline"]
+            ].map(([id, title, icon]) => (
+              <Pressable
+                key={id}
+                onPress={() => setRole(id)}
+                style={[styles.roleChip, role === id && styles.roleChipActive]}
+              >
+                <Ionicons name={icon} size={16} color={role === id ? "#FFFFFF" : colors.primary} />
+                <Text style={[styles.roleChipText, role === id && styles.roleChipTextActive]}>{title}</Text>
+              </Pressable>
             ))}
           </View>
-        </>
+        </View>
       )}
-      <Field label="Adresse e-mail" value={form.email} onChangeText={set("email")} keyboardType="email-address" placeholder="exemple@mail.com"/>
-      <Field label="Mot de passe" value={form.password} onChangeText={set("password")} secureTextEntry placeholder="8 caractères minimum"/>
+
+      <InputField
+        label="Email ou identifiant"
+        value={form.email}
+        onChangeText={set("email")}
+        placeholder="nom@exemple.com"
+        icon="mail-outline"
+        keyboardType="email-address"
+      />
+
+      <InputField
+        label="Mot de passe"
+        value={form.password}
+        onChangeText={set("password")}
+        placeholder="8 caractères minimum"
+        icon="lock-closed-outline"
+        secureTextEntry
+      />
+
       {mode === "register" && role !== "citizen" && (
-        <>
-          <Field label="Nom de la structure" value={form.organizationName} onChangeText={set("organizationName")}/>
-          <Field label="SIREN / SIRET" value={form.sirenSiret} onChangeText={set("sirenSiret")} keyboardType="numeric"/>
-          <Field label="Adresse" value={form.address} onChangeText={set("address")}/>
-          <Field label="Téléphone" value={form.phone} onChangeText={set("phone")} keyboardType="phone-pad"/>
-          <Button title="Utiliser ma position GPS" variant="secondary" icon="location" onPress={locate}/>
-          {role === "association" && (
-            <>
-              <Field label="Rayon d'intervention (km)" value={form.radiusKm} onChangeText={set("radiusKm")} keyboardType="numeric"/>
-              <Text style={styles.label}>Services proposés</Text>
-              <View style={styles.wrap}>
-                {services.map(s => (
-                  <Chip key={s} title={labels[s]} selected={selectedServices.includes(s)} onPress={() => setSelectedServices(v => v.includes(s) ? v.filter(x => x !== s) : [...v, s])}/>
-                ))}
-              </View>
-            </>
-          )}
-          <Field label="Lien HelloAsso (facultatif)" value={form.helloAssoUrl} onChangeText={set("helloAssoUrl")} placeholder="https://…"/>
-        </>
+        <View style={{ gap: 12, marginTop: 4 }}>
+          <InputField
+            label="Nom de la structure"
+            value={form.organizationName}
+            onChangeText={set("organizationName")}
+            placeholder="Ex. Croix-Rouge Paris 10, Bistrot Gourmand..."
+            icon="business-outline"
+          />
+          <InputField
+            label="Numéro SIREN / SIRET"
+            value={form.sirenSiret}
+            onChangeText={set("sirenSiret")}
+            placeholder="14 chiffres"
+            keyboardType="numeric"
+            icon="card-outline"
+          />
+          <InputField
+            label="Adresse du siège / local"
+            value={form.address}
+            onChangeText={set("address")}
+            placeholder="Ex. 24 Rue d'Hauteville, 75010 Paris"
+            icon="location-outline"
+          />
+          <InputField
+            label="Numéro de téléphone"
+            value={form.phone}
+            onChangeText={set("phone")}
+            placeholder="01..."
+            keyboardType="phone-pad"
+            icon="call-outline"
+          />
+        </View>
       )}
-      <Button title={busy ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : "Créer mon compte"} disabled={busy} onPress={submit}/>
-      <Pressable onPress={() => setPrivacy(true)} style={{ marginTop: 8, alignItems: "center" }}>
-        <Text style={[styles.small, { color: colors.green, textDecorationLine: "underline" }]}>En continuant, vous acceptez notre Politique de Confidentialité (RGPD)</Text>
+
+      <PrimaryButton
+        title={busy ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : "Créer mon compte"}
+        disabled={busy}
+        onPress={submit}
+        style={{ marginTop: 12 }}
+      />
+
+      <Pressable onPress={() => setPrivacyOpen(true)} style={{ marginTop: 16, alignItems: "center" }}>
+        <Text style={styles.legalSmallLink}>En continuant, vous acceptez notre Politique de Confidentialité (RGPD)</Text>
       </Pressable>
-      <PrivacyModal visible={privacy} close={() => setPrivacy(false)}/>
+
+      <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
     </ScrollView>
   );
 }
 
+/* ─────────────────────────────────────────────────────────────
+   ESPACE CONNECTÉ (CITOYEN, ASSOCIATION, RESTAURANT, ADMIN)
+───────────────────────────────────────────────────────────── */
+
 function PrivateApp({ session, logout }) {
   const { user } = session;
   const [tab, setTab] = useState("home");
-  const [deleteModal, setDeleteModal] = useState(false);
-  const [privacyModal, setPrivacyModal] = useState(false);
-  if (["association", "restaurant"].includes(user.role) && user.status !== "active") return <Pending user={user} logout={logout}/>;
-  const tabs = [
-    { id: "home", label: "Accueil", icon: "home" },
-    ...(user.role !== "restaurant" ? [{ id: "reports", label: "Signalements", icon: "map" }] : []),
-    ...(user.role !== "citizen" ? [{ id: "donations", label: "Invendus", icon: "restaurant" }] : []),
-    ...(user.role === "admin" ? [{ id: "admin", label: "Admin", icon: "shield" }] : [])
-  ];
+  const [quickReportOpen, setQuickReportOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  if (["association", "restaurant"].includes(user.role) && user.status !== "active") {
+    return <PendingScreen user={user} logout={logout} />;
+  }
+
   return (
     <View style={styles.flex}>
-      <View style={styles.topbar}>
-        <View>
-          <Text style={styles.topLogo}>SOS CONNECT</Text>
-          <Text style={styles.small}>{user.organizationName || user.email}</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-          <Pressable onPress={() => setPrivacyModal(true)}>
-            <Ionicons name="shield-checkmark-outline" size={22} color={colors.green}/>
-          </Pressable>
-          <Pressable onPress={logout}>
-            <Ionicons name="log-out-outline" size={25} color={colors.green}/>
+      {/* Top Bar Élégante */}
+      <View style={styles.topbarModern}>
+        <BrandLogo />
+        <View style={styles.topbarRight}>
+          <Pressable onPress={() => setProfileModalOpen(true)} style={styles.userProfilePill}>
+            <View style={styles.userAvatar}>
+              <Text style={styles.userAvatarText}>
+                {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
+              </Text>
+            </View>
+            <View>
+              <Text style={styles.userNamePill} numberOfLines={1}>
+                {user.organizationName || user.email.split("@")[0]}
+              </Text>
+              <Text style={styles.userRolePill}>
+                {user.role === "association" ? "Association agréée" : user.role === "restaurant" ? "Commerce" : user.role === "admin" ? "Admin" : "Citoyen"}
+              </Text>
+            </View>
           </Pressable>
         </View>
       </View>
+
+      {/* Vue centrale */}
       <View style={styles.content}>
-        {tab === "home" && <Home user={user}/>}
-        {tab === "reports" && <Reports user={user}/>}
-        {tab === "donations" && <Donations user={user}/>}
-        {tab === "admin" && <Admin/>}
+        {tab === "home" && <HomeScreen user={user} goTab={setTab} openReport={() => setQuickReportOpen(true)} />}
+        {tab === "map" && <MapScreen user={user} />}
+        {tab === "reports" && <ReportsScreen user={user} openNew={() => setQuickReportOpen(true)} />}
+        {tab === "donations" && <DonationsScreen user={user} />}
+        {tab === "admin" && <AdminScreen />}
       </View>
-      <View style={styles.nav}>
-        {tabs.map(t => (
-          <Pressable key={t.id} style={styles.navItem} onPress={() => setTab(t.id)}>
-            <Ionicons name={t.icon} size={22} color={tab === t.id ? colors.green : "#71827b"}/>
-            <Text style={[styles.navText, tab === t.id && styles.navTextActive]}>{t.label}</Text>
+
+      {/* Barre de navigation basse conforme au Mockup */}
+      <View style={styles.bottomTabBar}>
+        <Pressable onPress={() => setTab("home")} style={styles.tabBarItem}>
+          <Ionicons name={tab === "home" ? "home" : "home-outline"} size={22} color={tab === "home" ? colors.primary : colors.textMuted} />
+          <Text style={[styles.tabBarText, tab === "home" && styles.tabBarTextActive]}>Accueil</Text>
+        </Pressable>
+
+        <Pressable onPress={() => setTab("map")} style={styles.tabBarItem}>
+          <Ionicons name={tab === "map" ? "map" : "map-outline"} size={22} color={tab === "map" ? colors.primary : colors.textMuted} />
+          <Text style={[styles.tabBarText, tab === "map" && styles.tabBarTextActive]}>Carte</Text>
+        </Pressable>
+
+        {/* Bouton central flottant (+) Signaler */}
+        <Pressable onPress={() => setQuickReportOpen(true)} style={styles.centerFloatingButton}>
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </Pressable>
+
+        {user.role !== "restaurant" ? (
+          <Pressable onPress={() => setTab("reports")} style={styles.tabBarItem}>
+            <Ionicons name={tab === "reports" ? "list" : "list-outline"} size={22} color={tab === "reports" ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabBarText, tab === "reports" && styles.tabBarTextActive]}>Signalements</Text>
           </Pressable>
-        ))}
+        ) : (
+          <Pressable onPress={() => setTab("donations")} style={styles.tabBarItem}>
+            <Ionicons name={tab === "donations" ? "restaurant" : "restaurant-outline"} size={22} color={tab === "donations" ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabBarText, tab === "donations" && styles.tabBarTextActive]}>Invendus</Text>
+          </Pressable>
+        )}
+
+        {user.role === "admin" ? (
+          <Pressable onPress={() => setTab("admin")} style={styles.tabBarItem}>
+            <Ionicons name={tab === "admin" ? "shield" : "shield-outline"} size={22} color={tab === "admin" ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabBarText, tab === "admin" && styles.tabBarTextActive]}>Admin</Text>
+          </Pressable>
+        ) : (
+          <Pressable onPress={() => setProfileModalOpen(true)} style={styles.tabBarItem}>
+            <Ionicons name="person-outline" size={22} color={colors.textMuted} />
+            <Text style={styles.tabBarText}>Profil</Text>
+          </Pressable>
+        )}
       </View>
-      <Pressable onPress={() => setDeleteModal(true)} style={{ paddingVertical: 6 }}>
-        <Text style={styles.dangerLink}>Supprimer mon compte et mes données</Text>
-      </Pressable>
-      <Confirm
-        visible={deleteModal}
-        title="Supprimer mon compte"
-        text="Cette action est irréversible. Votre compte, vos informations et les données associées seront définitivement supprimés."
-        confirm={async () => {
-          try {
-            await api.delete("/auth/me");
-            await logout();
-            Alert.alert("Compte supprimé", "Votre compte et vos données ont été supprimés avec succès.");
-          } catch (e) {
-            Alert.alert("Erreur", errorMessage(e));
-          }
-        }}
-        close={() => setDeleteModal(false)}
-      />
-      <PrivacyModal visible={privacyModal} close={() => setPrivacyModal(false)}/>
+
+      <QuickReportModal visible={quickReportOpen} close={() => setQuickReportOpen(false)} />
+      <ProfileModal visible={profileModalOpen} user={user} logout={logout} close={() => setProfileModalOpen(false)} />
     </View>
   );
 }
-function Pending({ user, logout }) { return <View style={styles.center}><Ionicons name={user.status === "rejected" ? "close-circle" : "time"} color={user.status === "rejected" ? colors.red : colors.orange} size={54}/><Text style={styles.sectionTitle}>{user.status === "rejected" ? "Compte refusé" : "Compte en attente de validation"}</Text><Text style={styles.body}>{user.status === "rejected" ? "Contactez contact@soslink.fr si vous pensez qu'il s'agit d'une erreur." : "Votre structure est en cours d'examen. Vous recevrez un email après validation."}</Text><Button title="Déconnexion" onPress={logout}/></View>; }
 
-function Home({ user }) { const [data, setData] = useState(null); useEffect(() => { const route = user.role === "admin" ? "/admin/dashboard" : user.role === "restaurant" ? "/donations" : "/reports"; api.get(route).then(r => setData(r.data)).catch(() => {}); }, []); return <ScrollView contentContainerStyle={styles.page}><Text style={styles.sectionTitle}>Bonjour</Text><Text style={styles.body}>Bienvenue dans votre espace SOS CONNECT.</Text>{user.role === "admin" && data && <View style={styles.grid}>{[["Utilisateurs",data.users],["Organisations en attente",data.pendingOrganizations],["Signalements",data.reports],["Résolus",data.resolvedReports],["Dons",data.donations]].map(([k,v]) => <Card key={k} style={styles.metric}><Text style={styles.metricValue}>{v}</Text><Text style={styles.small}>{k}</Text></Card>)}</View>}{Array.isArray(data) && <Card><Text style={styles.cardTitle}>{data.length} élément(s) à traiter</Text><Text style={styles.small}>Ouvrez l'onglet correspondant pour consulter le détail.</Text></Card>}</ScrollView>; }
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN ACCUEIL PERSONNALISÉ PAR RÔLE
+───────────────────────────────────────────────────────────── */
 
-function Reports({ user }) {
-  const [reports, setReports] = useState([]), [form, setForm] = useState(false), [filter, setFilter] = useState(""), [loading, setLoading] = useState(false);
-  const load = useCallback(async () => { setLoading(true); try { const qs = filter ? `?status=${filter}` : ""; const { data } = await api.get(`/reports${qs}`); setReports(data); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } finally { setLoading(false); } }, [filter]); useEffect(() => { load(); }, [load]);
-  return <ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Signalements</Text>{["citizen","admin"].includes(user.role) && <Button title="Nouveau" icon="add" onPress={() => setForm(true)}/>}</View><View style={styles.wrap}>{[["","Tous"],["new","Nouveaux"],["in_progress","En cours"],["resolved","Résolus"]].map(([id, title]) => <Chip key={title} title={title} selected={filter === id} onPress={() => setFilter(id)}/>)}</View>{loading ? <Text>Chargement…</Text> : reports.map(r => <ReportCard key={r._id} report={r} user={user} changed={load}/>) }{reports.length === 0 && <Text style={styles.small}>Aucun signalement.</Text>}<ReportForm visible={form} close={() => setForm(false)} created={load}/></ScrollView>;
+function HomeScreen({ user, goTab, openReport }) {
+  const [reports, setReports] = useState([]);
+  const [donations, setDonations] = useState([]);
+  const [adminStats, setAdminStats] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+
+  useEffect(() => {
+    if (user.role === "admin") {
+      api.get("/admin/dashboard").then(({ data }) => setAdminStats(data)).catch(() => {});
+    } else {
+      api.get("/reports").then(({ data }) => setReports(data)).catch(() => {});
+      api.get("/donations").then(({ data }) => setDonations(data)).catch(() => {});
+    }
+  }, [user.role]);
+
+  const urgentCount = reports.filter((r) => r.urgency === "red" && r.status !== "resolved").length;
+  const inProgressCount = reports.filter((r) => r.status === "in_progress").length;
+  const resolvedCount = reports.filter((r) => r.status === "resolved").length;
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      {/* Welcome Banner */}
+      <View style={styles.welcomeHeroCard}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.welcomeHeroHello}>Bonjour,</Text>
+          <Text style={styles.welcomeHeroName}>
+            {user.organizationName || user.email.split("@")[0]}
+          </Text>
+          <View style={styles.zoneBadge}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+            <Text style={styles.zoneBadgeText}>
+              {user.role === "association"
+                ? "Secteur actif · Paris 10e (5 km)"
+                : user.role === "restaurant"
+                ? "Commerce solidaire agréé"
+                : "Citoyen engagé"}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* KPI Cards Grid */}
+      <View style={styles.kpiGrid}>
+        {user.role === "association" ? (
+          <>
+            <StatCard title="Urgences critiques" value={urgentCount} icon="warning" color={colors.danger} subtitle="Danger immédiat" />
+            <StatCard title="En cours" value={inProgressCount} icon="time" color={colors.alert} subtitle="Interventions" />
+            <StatCard title="Résolus" value={resolvedCount} icon="checkmark-done" color={colors.success} subtitle="Mis à l'abri" />
+            <StatCard title="Invendus à collecter" value={donations.length} icon="restaurant" color={colors.info} subtitle="Dons alimentaires" />
+          </>
+        ) : user.role === "restaurant" ? (
+          <>
+            <StatCard title="Dons publiés" value={donations.length} icon="cube" color={colors.primary} subtitle="Total partagé" />
+            <StatCard title="Repas sauvés" value="70+" icon="heart" color={colors.success} subtitle="Contre le gaspillage" />
+            <StatCard title="Associations" value="4" icon="people" color={colors.info} subtitle="Partenaires" />
+            <StatCard title="Défiscalisation" value="420 €" icon="receipt" color={colors.alert} subtitle="Attestation reçue" />
+          </>
+        ) : user.role === "admin" && adminStats ? (
+          <>
+            <StatCard title="Utilisateurs" value={adminStats.users} icon="people" color={colors.primary} />
+            <StatCard title="À valider" value={adminStats.pendingOrganizations} icon="shield-outline" color={colors.alert} />
+            <StatCard title="Signalements" value={adminStats.reports} icon="map" color={colors.danger} />
+            <StatCard title="Dons alimentaires" value={adminStats.donations} icon="restaurant" color={colors.success} />
+          </>
+        ) : (
+          <>
+            <StatCard title="Mes signalements" value={reports.length} icon="megaphone" color={colors.primary} />
+            <StatCard title="Résolus" value={resolvedCount} icon="checkmark-circle" color={colors.success} />
+          </>
+        )}
+      </View>
+
+      {/* Carte en direct du secteur */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeaderTitle}>Carte des urgences en direct</Text>
+          <Pressable onPress={() => goTab("map")}>
+            <Text style={styles.seeAllLink}>Agrandir la carte →</Text>
+          </Pressable>
+        </View>
+        <ReportsMap reports={reports} height={280} />
+      </View>
+
+      {/* Derniers signalements prioritaires */}
+      {user.role === "association" && reports.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>Signalements prioritaires</Text>
+            <Pressable onPress={() => goTab("reports")}>
+              <Text style={styles.seeAllLink}>Voir tout →</Text>
+            </Pressable>
+          </View>
+          {reports.slice(0, 2).map((r) => (
+            <View key={r._id} style={styles.priorityCard}>
+              {r.imageUrl ? (
+                <Pressable
+                  onPress={() => setLightbox({ url: r.imageUrl, title: r.addressHint || "Photo du signalement" })}
+                  style={styles.priorityImageWrapper}
+                >
+                  <Image source={{ uri: r.imageUrl }} style={styles.priorityCardImage} />
+                  <View style={styles.imageZoomBadge}>
+                    <Ionicons name="scan-outline" size={13} color="#FFFFFF" />
+                    <Text style={styles.imageZoomBadgeText}>Photo</Text>
+                  </View>
+                </Pressable>
+              ) : null}
+              <View style={styles.priorityCardHeader}>
+                <View style={[styles.urgencyDot, { backgroundColor: r.urgency === "red" ? colors.danger : colors.alert }]} />
+                <Text style={styles.priorityCardTitle}>
+                  {r.type === "group" ? "Groupe en détresse" : "Personne seule"}
+                </Text>
+                <View style={[styles.statusBadgeSmall, { backgroundColor: r.status === "resolved" ? "#DCFCE7" : "#FEF3C7" }]}>
+                  <Text style={[styles.statusBadgeSmallText, { color: r.status === "resolved" ? "#166534" : "#92400E" }]}>
+                    {statusLabels[r.status]}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.priorityCardAddress}>📍 {r.addressHint || "Localisation GPS"}</Text>
+              {r.comment ? <Text style={styles.priorityCardComment}>« {r.comment} »</Text> : null}
+              <View style={styles.priorityCardActions}>
+                <Pressable
+                  onPress={() => goTab("reports")}
+                  style={styles.actionChipButton}
+                >
+                  <Text style={styles.actionChipButtonText}>Prendre en charge</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Quick Action Citoyen */}
+      {user.role === "citizen" && (
+        <View style={styles.citizenActionCard}>
+          <Ionicons name="megaphone" size={32} color={colors.primary} />
+          <Text style={styles.citizenActionTitle}>Un besoin urgent observé ?</Text>
+          <Text style={styles.citizenActionText}>
+            Signalez immédiatement la position pour orienter les équipes du Samu Social et de la Croix-Rouge.
+          </Text>
+          <PrimaryButton title="Créer un signalement" icon="add" onPress={openReport} />
+        </View>
+      )}
+
+      <ImageLightboxModal visible={!!lightbox} image={lightbox} close={() => setLightbox(null)} />
+    </ScrollView>
+  );
 }
-function ReportCard({ report, user, changed }) { const [open, setOpen] = useState(false); const update = async (status) => { try { await api.patch(`/reports/${report._id}`, { status }); Alert.alert("Demande enregistrée"); changed(); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }; return <Card><Pressable onPress={() => setOpen(v => !v)}><View style={styles.rowBetween}><Text style={styles.cardTitle}>{report.type === "group" ? "Groupe" : "Personne"} · {statusLabels[report.status]}</Text><Text style={[styles.urgency, { color: report.urgency === "red" ? colors.red : report.urgency === "yellow" ? colors.orange : colors.green }]}>{report.urgency?.toUpperCase()}</Text></View><Text style={styles.small}>{date(report.createdAt)} · {report.addressHint || "Position GPS"}</Text><Text style={styles.small}>{(report.needs || []).map(x => labels[x] || x).join(", ")}</Text>{report.comment && <Text style={styles.body}>{report.comment}</Text>}{report.imageUrl && <Image source={{ uri: report.imageUrl }} style={styles.reportImage}/>}</Pressable>{open && <><Text style={styles.small}>Coordonnées : {report.location?.coordinates?.join(", ")}</Text>{user.role === "association" && <View style={styles.wrap}>{["in_progress", "resolved", "removed"].map(s => <Chip key={s} title={statusLabels[s]} onPress={() => update(s)}/>)}</View>}{user.role === "admin" && report.pendingStatus?.status && <View style={styles.wrap}><Button title="Valider la demande" onPress={async () => { await api.patch(`/reports/${report._id}/confirm-status`, { action: "approve" }); changed(); }}/><Button title="Rejeter" variant="danger" onPress={async () => { await api.patch(`/reports/${report._id}/confirm-status`, { action: "reject" }); changed(); }}/></View>}</>}</Card>; }
-function ReportForm({ visible, close, created }) {
-  const [type, setType] = useState("individual"); const [addressHint, setAddress] = useState(""); const [comment, setComment] = useState(""); const [imageUrl, setImage] = useState(""); const [urgency, setUrgency] = useState("yellow"); const [chosen, setChosen] = useState([]); const [coords, setCoords] = useState(initialCoords); const [busy, setBusy] = useState(false);
-  const [individual, setIndividual] = useState({ apparentGender: "unknown", ageRange: "30-40", languageBarrier: false, spokenToPerson: false, requestedHelp: false });
-  const [group, setGroup] = useState({ peopleCount: "10", majorityGender: "mixed", averageAgeRange: "30-40" }); const [otherNeed, setOtherNeed] = useState("");
-  const locate = async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return Alert.alert("Localisation non autorisée", "Saisissez un repère pour continuer."); const location = await Location.getCurrentPositionAsync({}); setCoords([location.coords.longitude, location.coords.latitude]); Alert.alert("Position ajoutée"); };
-  const toggle = (need) => setChosen((value) => value.includes(need) ? value.filter((item) => item !== need) : [...value, need]);
-  const send = async () => { setBusy(true); try { await api.post("/reports", { type, coordinates: coords, addressHint, comment, imageUrl: imageUrl || undefined, urgency, needs: chosen, otherNeed: otherNeed || undefined, individual: type === "individual" ? individual : undefined, group: type === "group" ? { ...group, peopleCount: Number(group.peopleCount || 0) } : undefined }); Alert.alert("Signalement envoyé", "Les associations de la zone ont été alertées."); close(); created(); } catch (error) { Alert.alert("Erreur", errorMessage(error)); } finally { setBusy(false); } };
-  return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.app}><ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Nouveau signalement</Text><Pressable onPress={close}><Ionicons name="close" size={28}/></Pressable></View><Text style={styles.body}>Les informations sont transmises seulement aux associations de votre secteur.</Text><Text style={styles.label}>Type de signalement</Text><View style={styles.wrap}><Chip title="Personne seule" selected={type === "individual"} onPress={() => setType("individual")}/><Chip title="Groupe" selected={type === "group"} onPress={() => setType("group")}/></View><Button title="Utiliser ma position" variant="secondary" icon="location" onPress={locate}/><Field label="Adresse ou repère" value={addressHint} onChangeText={setAddress}/>{type === "individual" ? <><Text style={styles.label}>Sexe apparent</Text><View style={styles.wrap}>{[["male","Homme"],["female","Femme"],["unknown","Indéterminé"]].map(([id,title]) => <Chip key={id} title={title} selected={individual.apparentGender === id} onPress={() => setIndividual(v => ({ ...v, apparentGender: id }))}/>)}</View><Field label="Tranche d'âge estimée" value={individual.ageRange} onChangeText={(ageRange) => setIndividual(v => ({ ...v, ageRange }))} placeholder="ex. 30-40"/><Toggle label="Barrière de la langue" value={individual.languageBarrier} onValueChange={(languageBarrier) => setIndividual(v => ({ ...v, languageBarrier }))}/><Toggle label="Avez-vous parlé à la personne ?" value={individual.spokenToPerson} onValueChange={(spokenToPerson) => setIndividual(v => ({ ...v, spokenToPerson }))}/><Toggle label="La personne a demandé de l'aide ?" value={individual.requestedHelp} onValueChange={(requestedHelp) => setIndividual(v => ({ ...v, requestedHelp }))}/></> : <><Field label="Nombre de personnes estimé" value={group.peopleCount} keyboardType="numeric" onChangeText={(peopleCount) => setGroup(v => ({ ...v, peopleCount }))}/><Text style={styles.label}>Sexe majoritaire</Text><View style={styles.wrap}>{[["male","Hommes"],["female","Femmes"],["mixed","Mixte"]].map(([id,title]) => <Chip key={id} title={title} selected={group.majorityGender === id} onPress={() => setGroup(v => ({ ...v, majorityGender: id }))}/>)}</View><Field label="Tranche d'âge moyenne" value={group.averageAgeRange} onChangeText={(averageAgeRange) => setGroup(v => ({ ...v, averageAgeRange }))}/></>}<Text style={styles.label}>Besoins identifiés</Text><View style={styles.wrap}>{needs.map(need => <Chip key={need} title={labels[need]} selected={chosen.includes(need)} onPress={() => toggle(need)}/>)}</View>{chosen.includes("other") && <Field label="Autre besoin" value={otherNeed} onChangeText={setOtherNeed}/>}<Text style={styles.label}>Niveau d'urgence</Text><View style={styles.wrap}>{[["green","Vert"],["yellow","Jaune"],["red","Rouge"]].map(([id,title]) => <Chip key={id} title={title} color={id === "red" ? colors.red : id === "yellow" ? colors.orange : colors.green} selected={urgency === id} onPress={() => setUrgency(id)}/>)}</View>{urgency === "red" && <Text style={styles.emergency}>En cas de danger immédiat, appelez le 15 ou le 18.</Text>}<Field label="Commentaire" value={comment} onChangeText={setComment} multiline/><Field label="URL de la photo (facultatif)" value={imageUrl} onChangeText={setImage}/><Button title={busy ? "Envoi…" : "Envoyer le signalement"} disabled={busy} icon="send" onPress={send}/></ScrollView></SafeAreaView></Modal>;
+
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN CARTE PLEIN ÉCRAN
+───────────────────────────────────────────────────────────── */
+
+function MapScreen() {
+  const [reports, setReports] = useState([]);
+  const [filter, setFilter] = useState("all");
+
+  useEffect(() => {
+    api.get("/reports").then(({ data }) => setReports(data)).catch(() => {});
+  }, []);
+
+  const filteredReports = reports.filter((r) => {
+    if (filter === "red") return r.urgency === "red";
+    if (filter === "food") return (r.needs || []).includes("food");
+    if (filter === "shelter") return (r.needs || []).includes("shelter");
+    return true;
+  });
+
+  return (
+    <View style={[styles.flex, { paddingBottom: 72 }]}>
+      {/* Filtres de la carte */}
+      <View style={styles.mapFilterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}>
+          {[
+            ["all", "Tous les repères"],
+            ["red", "🚨 Critiques"],
+            ["food", "🍲 Repas"],
+            ["shelter", "🏠 Hébergement"]
+          ].map(([id, title]) => (
+            <Pressable
+              key={id}
+              onPress={() => setFilter(id)}
+              style={[styles.mapFilterChip, filter === id && styles.mapFilterChipActive]}
+            >
+              <Text style={[styles.mapFilterChipText, filter === id && styles.mapFilterChipTextActive]}>
+                {title}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+      <View style={{ flex: 1, width: "100%" }}>
+        <ReportsMap reports={filteredReports} height="100%" />
+      </View>
+    </View>
+  );
 }
 
-function QuickReport({ visible, close }) {
-  const [comment, setComment] = useState("");
-  const [addressHint, setAddress] = useState("");
-  const [imageData, setImageData] = useState("");
-  const [urgency, setUrgency] = useState("yellow");
-  const [chosen, setChosen] = useState(["food"]);
-  const [coords, setCoords] = useState(initialCoords);
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN SIGNALEMENTS (LISTE & WORKFLOW)
+───────────────────────────────────────────────────────────── */
+
+function ReportsScreen({ user, openNew }) {
+  const [reports, setReports] = useState([]);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = filter ? `?status=${filter}` : "";
+      const { data } = await api.get(`/reports${qs}`);
+      setReports(data);
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const updateStatus = async (id, status) => {
+    try {
+      await api.patch(`/reports/${id}`, { status });
+      Alert.alert("Succès", "Statut du signalement mis à jour.");
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      <View style={styles.sectionHeaderRow}>
+        <View>
+          <Text style={styles.sectionHeaderTitle}>Signalements terrain</Text>
+          <Text style={styles.bodyMuted}>{reports.length} situation(s) identifiée(s)</Text>
+        </View>
+        {["citizen", "admin"].includes(user.role) && (
+          <Pressable onPress={openNew} style={styles.smallAddBtn}>
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.smallAddBtnText}>Nouveau</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Filter Chips */}
+      <View style={styles.filterChipsRow}>
+        {[
+          ["", "Tous"],
+          ["new", "Nouveaux"],
+          ["in_progress", "En cours"],
+          ["resolved", "Résolus"]
+        ].map(([id, label]) => (
+          <Pressable
+            key={id}
+            onPress={() => setFilter(id)}
+            style={[styles.filterChipItem, filter === id && styles.filterChipItemActive]}
+          >
+            <Text style={[styles.filterChipText, filter === id && styles.filterChipTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {loading ? (
+        <Text style={styles.loadingText}>Mise à jour des signalements…</Text>
+      ) : (
+        reports.map((r) => (
+          <View key={r._id} style={styles.reportItemCard}>
+            <View style={styles.reportCardTop}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={[styles.urgencyDot, { backgroundColor: r.urgency === "red" ? colors.danger : r.urgency === "yellow" ? colors.alert : colors.success }]} />
+                <Text style={styles.reportItemTitle}>
+                  {r.type === "group" ? "Groupe de personnes" : "Personne seule"}
+                </Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: r.status === "resolved" ? "#DCFCE7" : "#FEF3C7" }]}>
+                <Text style={[styles.statusPillText, { color: r.status === "resolved" ? "#166534" : "#92400E" }]}>
+                  {statusLabels[r.status]}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.reportItemMeta}>📍 {r.addressHint || "Position GPS"} · {formatDate(r.createdAt)}</Text>
+            {r.comment ? <Text style={styles.reportItemComment}>{r.comment}</Text> : null}
+
+            {/* Needs Chips */}
+            <View style={styles.needsWrap}>
+              {(r.needs || []).map((n) => (
+                <View key={n} style={styles.needTagPill}>
+                  <Ionicons name={needIcons[n] || "help-circle"} size={13} color={colors.primary} />
+                  <Text style={styles.needTagText}>{labels[n] || n}</Text>
+                </View>
+              ))}
+            </View>
+
+            {r.imageUrl ? (
+              <Pressable
+                onPress={() => setLightbox({ url: r.imageUrl, title: `${r.type === "group" ? "Groupe" : "Personne"} · ${r.addressHint || "Signalement"}` })}
+                style={styles.imageCardWrapper}
+              >
+                <Image source={{ uri: r.imageUrl }} style={styles.reportCardImage} />
+                <View style={styles.imageZoomBadge}>
+                  <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                  <Text style={styles.imageZoomBadgeText}>Agrandir la photo</Text>
+                </View>
+              </Pressable>
+            ) : null}
+
+            {/* Actions pour les associations */}
+            {user.role === "association" && r.status !== "resolved" && (
+              <View style={styles.reportActionRow}>
+                <Pressable onPress={() => updateStatus(r._id, "in_progress")} style={styles.takeActionBtn}>
+                  <Text style={styles.takeActionBtnText}>Prendre en charge</Text>
+                </Pressable>
+                <Pressable onPress={() => updateStatus(r._id, "resolved")} style={styles.resolveActionBtn}>
+                  <Text style={styles.resolveActionBtnText}>Marquer résolu ✓</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        ))
+      )}
+
+      {reports.length === 0 && !loading && (
+        <View style={styles.emptyCard}>
+          <Ionicons name="checkmark-circle-outline" size={40} color={colors.primary} />
+          <Text style={styles.emptyCardTitle}>Aucun signalement</Text>
+          <Text style={styles.bodyMuted}>Toutes les situations de cette zone sont actuellement prises en charge.</Text>
+        </View>
+      )}
+
+      <ImageLightboxModal visible={!!lightbox} image={lightbox} close={() => setLightbox(null)} />
+    </ScrollView>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN INVENDUS ALIMENTAIRES (RESTAURANTS & ASSOCS)
+───────────────────────────────────────────────────────────── */
+
+function DonationsScreen({ user }) {
+  const [items, setItems] = useState([]);
+  const [formOpen, setFormOpen] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [qty, setQty] = useState("");
+  const [start, setStart] = useState("18:00");
+  const [end, setEnd] = useState("20:00");
+  const [photoData, setPhotoData] = useState("");
   const [busy, setBusy] = useState(false);
-  const toggleNeed = (need) => setChosen((value) => value.includes(need) ? value.filter((item) => item !== need) : [...value, need]);
-  const send = async () => {
-    if (!comment.trim()) return Alert.alert("Description requise", "Décrivez brièvement la situation observée.");
+  const [lightbox, setLightbox] = useState(null);
+
+  const load = useCallback(() => {
+    api.get("/donations").then(({ data }) => setItems(data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const takePhoto = async () => {
+    const p = await ImagePicker.requestCameraPermissionsAsync();
+    if (!p.granted) return Alert.alert("Caméra", "Autorisez l'accès à la caméra pour photographier les denrées.");
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: true });
+    if (!res.canceled && res.assets?.[0]?.base64) {
+      setPhotoData(`data:image/jpeg;base64,${res.assets[0].base64}`);
+    }
+  };
+
+  const pickImage = async () => {
+    const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!p.granted) return Alert.alert("Galerie", "Autorisez l'accès à la bibliothèque photos.");
+    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: true });
+    if (!res.canceled && res.assets?.[0]?.base64) {
+      setPhotoData(`data:image/jpeg;base64,${res.assets[0].base64}`);
+    }
+  };
+
+  const sendDonation = async () => {
+    if (!desc.trim() || !qty.trim()) {
+      return Alert.alert("Erreur", "Saisissez la description et la quantité.");
+    }
     setBusy(true);
     try {
-      let reportCoords = coords;
-      const p = await Location.requestForegroundPermissionsAsync();
-      if (p.status === "granted") {
-        const l = await Location.getCurrentPositionAsync({});
-        reportCoords = [l.coords.longitude, l.coords.latitude];
-        setCoords(reportCoords);
-      }
-      await api.post("/reports/quick", { coordinates: reportCoords, comment: comment.trim(), addressHint: addressHint.trim() || undefined, imageUrl: imageData || undefined, urgency, needs: chosen });
-      Alert.alert("Merci", "Le signalement a été transmis aux associations concernées.");
-      close();
+      await api.post("/donations", {
+        description: desc,
+        quantity: qty,
+        photoUrl: photoData || undefined,
+        availableDate: new Date().toISOString(),
+        pickupSlots: [{ start, end }]
+      });
+      Alert.alert("Don solidaire publié", "Les associations de votre secteur ont été notifiées.");
+      setFormOpen(false);
+      setDesc("");
+      setQty("");
+      setPhotoData("");
+      load();
     } catch (e) {
       Alert.alert("Erreur", errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      return Alert.alert("Permission requise", "Autorisez l'accès aux photos pour ajouter une image.");
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.7,
-      base64: true
-    });
-    if (!result.canceled && result.assets?.[0]?.base64) {
-      const asset = result.assets[0];
-      setImageData(`data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}`);
+
+  const markCollected = async (id) => {
+    try {
+      await api.patch(`/donations/${id}/status`, { status: "collected" });
+      Alert.alert("Merci", "Collecte enregistrée avec succès.");
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
     }
   };
-  const takePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      return Alert.alert("Permission requise", "Autorisez la caméra pour prendre une photo.");
-    }
-    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.7, base64: true });
-    if (!result.canceled && result.assets?.[0]?.base64) {
-      const asset = result.assets[0];
-      setImageData(`data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}`);
-    }
-  };
-  return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.quickModal}><ScrollView contentContainerStyle={styles.quickPage}>
-    <View style={styles.rowBetween}><View><Text style={styles.quickTitle}>Signalement rapide</Text><Text style={styles.quickIntro}>Vous pouvez signaler une situation sans créer de compte.</Text></View><Pressable onPress={close} style={styles.quickClose}><Ionicons name="close" size={25} color="#063D2E"/></Pressable></View>
-    <Field label="Adresse ou repère" value={addressHint} onChangeText={setAddress} placeholder="Ex. devant la gare, rue Victor Hugo..." />
-    <Field label="Description de la situation" value={comment} onChangeText={setComment} placeholder="Décrivez ce que vous observez : homme seul, famille, besoin visible d'une couverture..." multiline />
-    <View style={styles.quickBlock}><Text style={styles.quickLabel}>Ajouter une photo (optionnel)</Text><View style={styles.photoActions}><Pressable style={styles.photoButton} onPress={takePhoto}><Ionicons name="camera-outline" size={22} color={colors.green}/><Text style={styles.photoButtonText}>Prendre une photo</Text></Pressable><Pressable style={styles.photoButton} onPress={pickImage}><Ionicons name="images-outline" size={22} color={colors.green}/><Text style={styles.photoButtonText}>Choisir une image</Text></Pressable></View>{imageData && <View style={styles.photoPreview}><Image source={{ uri: imageData }} style={styles.photoPreviewImage}/><Pressable style={styles.photoRemove} onPress={() => setImageData("")}><Ionicons name="close-circle" size={25} color={colors.red}/></Pressable></View>}</View>
-    <View style={styles.quickBlock}><Text style={styles.quickLabel}>Besoins observés</Text><View style={styles.wrap}>{needs.map((need) => <Chip key={need} title={`${chosen.includes(need) ? "✓ " : ""}${labels[need]}`} selected={chosen.includes(need)} onPress={() => toggleNeed(need)} />)}</View></View>
-    <View style={styles.quickBlock}><Text style={styles.quickLabel}>Niveau d'urgence</Text><View style={styles.quickUrgencies}>{[["green","Stable","Pas de danger immédiat"],["yellow","Important","Intervention rapide requise"],["red","Critique","Urgence médicale / détresse"]].map(([id,title,description]) => <Pressable key={id} onPress={() => setUrgency(id)} style={[styles.quickUrgency, urgency === id && styles.quickUrgencySelected, id === "red" && urgency === id && styles.quickUrgencyRed]}><Text style={[styles.quickUrgencyTitle, urgency === id && styles.quickUrgencyTitleSelected]}>{title}</Text><Text style={styles.quickUrgencyText}>{description}</Text></Pressable>)}</View></View>
-    <View style={styles.quickActions}><Button title="Annuler" variant="secondary" onPress={close}/><Button title={busy ? "Envoi…" : "Envoyer le signalement"} icon="send" disabled={busy} onPress={send}/></View>
-  </ScrollView></SafeAreaView></Modal>;
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      <View style={styles.sectionHeaderRow}>
+        <View>
+          <Text style={styles.sectionHeaderTitle}>Invendus alimentaires</Text>
+          <Text style={styles.bodyMuted}>Lutte contre le gaspillage solidaire ({items.length} lots)</Text>
+        </View>
+        {user.role === "restaurant" && (
+          <Pressable onPress={() => setFormOpen(true)} style={styles.smallAddBtn}>
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.smallAddBtnText}>Nouveau don</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {items.map((d) => (
+        <View key={d._id} style={styles.donationCard}>
+          {d.photoUrl ? (
+            <Pressable
+              onPress={() => setLightbox({ url: d.photoUrl, title: `${d.description} (${d.quantity})` })}
+              style={styles.donationImageWrapper}
+            >
+              <Image source={{ uri: d.photoUrl }} style={styles.donationCardImage} />
+              <View style={styles.imageZoomBadge}>
+                <Ionicons name="scan-outline" size={14} color="#FFFFFF" />
+                <Text style={styles.imageZoomBadgeText}>Agrandir la photo</Text>
+              </View>
+            </Pressable>
+          ) : null}
+
+          <View style={styles.donationCardHeader}>
+            <View style={styles.donationIconBox}>
+              <Ionicons name="restaurant" size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.donationTitle}>{d.description}</Text>
+              <Text style={styles.donationQty}>Quantité : {d.quantity}</Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: d.status === "collected" ? "#DCFCE7" : "#EFF6FF" }]}>
+              <Text style={[styles.statusPillText, { color: d.status === "collected" ? "#166534" : "#1D4ED8" }]}>
+                {statusLabels[d.status]}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.donationMeta}>
+            🏪 {d.restaurant?.organizationName || "Commerce solidaire"} · Retrait : {d.pickupSlots?.[0]?.start || "18h"} - {d.pickupSlots?.[0]?.end || "20h"}
+          </Text>
+
+          {user.role === "association" && d.status === "assigned" && (
+            <PrimaryButton
+              title="Marquer comme collecté"
+              icon="checkmark-circle"
+              onPress={() => markCollected(d._id)}
+              style={{ marginTop: 10 }}
+            />
+          )}
+        </View>
+      ))}
+
+      {/* Modal Créer Don */}
+      <Modal visible={formOpen} animationType="slide">
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalTopNav}>
+            <Pressable onPress={() => setFormOpen(false)} style={styles.modalCloseBtn}>
+              <Ionicons name="close" size={24} color={colors.primaryDark} />
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Déclarer un don d'invendus</Text>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+            <InputField
+              label="Description des denrées"
+              value={desc}
+              onChangeText={setDesc}
+              placeholder="Ex. 20 paniers repas chauds, 15 barquettes de légumes..."
+              multiline
+            />
+            <InputField
+              label="Quantité estimée"
+              value={qty}
+              onChangeText={setQty}
+              placeholder="Ex. 20 repas / 15 kg"
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <InputField label="Début créneau" value={start} onChangeText={setStart} placeholder="18:00" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <InputField label="Fin créneau" value={end} onChangeText={setEnd} placeholder="20:00" />
+              </View>
+            </View>
+
+            {/* Photo Upload Options */}
+            <View style={{ gap: 8 }}>
+              <Text style={styles.inputLabel}>Photo des denrées (recommandé)</Text>
+              <View style={styles.mediaButtonsRow}>
+                <Pressable onPress={takePhoto} style={styles.mediaBtn}>
+                  <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                  <Text style={styles.mediaBtnText}>Prendre une photo</Text>
+                </Pressable>
+                <Pressable onPress={pickImage} style={styles.mediaBtn}>
+                  <Ionicons name="images-outline" size={22} color={colors.primary} />
+                  <Text style={styles.mediaBtnText}>Depuis la galerie</Text>
+                </Pressable>
+              </View>
+              {photoData ? (
+                <View style={styles.imagePreviewWrap}>
+                  <Image source={{ uri: photoData }} style={styles.imagePreview} />
+                  <Pressable onPress={() => setPhotoData("")} style={styles.removeImageBadge}>
+                    <Ionicons name="close" size={18} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
+            <PrimaryButton
+              title={busy ? "Publication en cours…" : "Publier le don solidaire"}
+              disabled={busy}
+              onPress={sendDonation}
+              style={{ marginTop: 12 }}
+            />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <ImageLightboxModal visible={!!lightbox} image={lightbox} close={() => setLightbox(null)} />
+    </ScrollView>
+  );
 }
 
-function Donations({ user }) { const [items, setItems] = useState([]), [summary, setSummary] = useState(null), [form, setForm] = useState(false); const year = new Date().getFullYear(); const load = useCallback(async () => { try { const results = await Promise.all([api.get("/donations"), api.get(`/donations/annual-summary/${year}`).catch(() => ({ data: null }))]); setItems(results[0].data); setSummary(results[1].data); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }, []); useEffect(() => { load(); }, [load]); return <ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Invendus alimentaires</Text>{user.role === "restaurant" && <Button title="Déclarer" icon="add" onPress={() => setForm(true)}/>}</View>{summary && <Card><Text style={styles.cardTitle}>Bilan {year}</Text><Text style={styles.body}>{summary.donationCount || 0} don(s) · {summary.totalValueEur || 0} € valorisés</Text></Card>}{items.map(d => <Card key={d._id}><Text style={styles.cardTitle}>{d.description}</Text><Text style={styles.body}>{d.quantity} · disponible le {date(d.availableDate)}</Text><Text style={styles.small}>{statusLabels[d.status]}{d.restaurant?.organizationName ? ` · ${d.restaurant.organizationName}` : ""}</Text>{d.pickupSlots?.map((p,i) => <Text key={i} style={styles.small}>Retrait : {p.start} - {p.end}</Text>)}{user.role === "association" && d.status === "assigned" && <Button title="Marquer comme collecté" onPress={async () => { await api.patch(`/donations/${d._id}/status`, { status: "collected" }); load(); }}/>}</Card>)}{items.length === 0 && <Text style={styles.small}>Aucun don.</Text>}<DonationForm visible={form} close={() => setForm(false)} created={load}/></ScrollView>; }
-function DonationForm({ visible, close, created }) { const [description, setDescription] = useState(""), [quantity, setQuantity] = useState(""), [availableDate, setDate] = useState(new Date().toISOString()), [photoUrl, setPhoto] = useState(""), [start, setStart] = useState(""), [end, setEnd] = useState(""); const send = async () => { try { await api.post("/donations", { description, quantity, availableDate, photoUrl: photoUrl || undefined, pickupSlots: start && end ? [{ start, end }] : [] }); Alert.alert("Don déclaré"); close(); created(); } catch (e) { Alert.alert("Erreur", errorMessage(e)); } }; return <Modal visible={visible} animationType="slide"><SafeAreaView style={styles.app}><ScrollView contentContainerStyle={styles.page}><View style={styles.rowBetween}><Text style={styles.sectionTitle}>Nouveau don</Text><Pressable onPress={close}><Ionicons name="close" size={28}/></Pressable></View><Field label="Description" value={description} onChangeText={setDescription} multiline/><Field label="Quantité" value={quantity} onChangeText={setQuantity} placeholder="ex. 20 repas"/><Field label="Date disponible (ISO)" value={availableDate} onChangeText={setDate}/><Field label="URL de photo" value={photoUrl} onChangeText={setPhoto}/><Field label="Début du créneau" value={start} onChangeText={setStart} placeholder="18:00"/><Field label="Fin du créneau" value={end} onChangeText={setEnd} placeholder="20:00"/><Button title="Publier le don" onPress={send}/></ScrollView></SafeAreaView></Modal>; }
+/* ─────────────────────────────────────────────────────────────
+   ÉCRAN ADMINISTRATION
+───────────────────────────────────────────────────────────── */
 
-function Admin() { const [view, setView] = useState("dashboard"); return <ScrollView contentContainerStyle={styles.page}><Text style={styles.sectionTitle}>Administration</Text><ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={styles.wrap}>{[["dashboard","Vue d'ensemble"],["users","Utilisateurs"],["reports","Signalements"],["donations","Dons"],["blog","Blog"]].map(([id,t]) => <Chip key={id} title={t} selected={view === id} onPress={() => setView(id)}/>)}</View></ScrollView>{view === "dashboard" && <AdminDashboard/>}{view === "users" && <AdminUsers/>}{view === "reports" && <AdminReports/>}{view === "donations" && <AdminDonations/>}{view === "blog" && <AdminBlog/>}</ScrollView>; }
-function AdminDashboard() { const [d,setD] = useState(null),[pending,setPending]=useState([]); const load=useCallback(async()=>{const r=await Promise.all([api.get("/admin/dashboard"),api.get("/admin/organizations/pending")]);setD(r[0].data);setPending(r[1].data);},[]);useEffect(()=>{load();},[load]);return <>{d&&<View style={styles.grid}>{Object.entries(d).map(([k,v])=><Card key={k} style={styles.metric}><Text style={styles.metricValue}>{v}</Text><Text style={styles.small}>{k}</Text></Card>)}</View>}<Text style={styles.cardTitle}>Organisations en attente</Text>{pending.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.organizationName || x.email}</Text><Text style={styles.small}>{x.role} · {x.email}</Text><View style={styles.wrap}><Button title="Valider" onPress={async()=>{await api.patch(`/admin/organizations/${x._id}/status`,{status:"active"});load();}}/><Button title="Refuser" variant="danger" onPress={async()=>{await api.patch(`/admin/organizations/${x._id}/status`,{status:"rejected"});load();}}/></View></Card>)}</>; }
-function AdminUsers() { const [data,setData]=useState([]); const load=useCallback(()=>api.get("/admin/users").then(r=>setData(r.data)),[]);useEffect(()=>{load();},[load]);return <>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.organizationName || x.email}</Text><Text style={styles.small}>{x.role} · {x.status} · {x.email}</Text><Button title="Supprimer" variant="danger" onPress={()=>Alert.alert("Supprimer", "Supprimer cet utilisateur ?", [{text:"Annuler"},{text:"Supprimer",style:"destructive",onPress:async()=>{await api.delete(`/admin/users/${x._id}`);load();}}])}/></Card>)}</>; }
-function AdminReports() { const [data,setData]=useState([]); const load=useCallback(()=>api.get("/admin/reports").then(r=>setData(r.data)),[]);useEffect(()=>{load();},[load]);return <>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.type} · {statusLabels[x.status]}</Text><Text style={styles.small}>{x.addressHint} · {date(x.createdAt)}</Text><View style={styles.wrap}>{["new","in_progress","resolved","removed"].map(s=><Chip key={s} title={statusLabels[s]} selected={x.status===s} onPress={async()=>{await api.patch(`/reports/${x._id}`,{status:s});load();}}/>)}<Button title="Supprimer" variant="danger" onPress={async()=>{await api.delete(`/reports/${x._id}`);load();}}/></View></Card>)}</>; }
-function AdminDonations() { const [data,setData]=useState([]),[restaurants,setRestaurants]=useState([]);const y=new Date().getFullYear();useEffect(()=>{Promise.all([api.get(`/admin/donations?year=${y}`),api.get("/admin/users?role=restaurant&status=active")]).then(([d,r])=>{setData(d.data);setRestaurants(r.data);});},[]);return <><Text style={styles.cardTitle}>Valorisation IA</Text>{data.map(x=><Card key={x._id}><Text style={styles.cardTitle}>{x.description}</Text><Text style={styles.body}>{x.quantity} · {x.valuation?.estimatedValueEur || 0} €</Text><Text style={styles.small}>{x.restaurant?.organizationName || x.restaurant?.email}</Text></Card>)}<Text style={styles.cardTitle}>Reçus fiscaux {y}</Text>{restaurants.map(r=><Card key={r._id}><Text style={styles.cardTitle}>{r.organizationName || r.email}</Text><Text style={styles.small}>{r.email}</Text><Button title="Envoyer le reçu fiscal" onPress={async()=>{try{const {data:receipt}=await api.post(`/admin/donations/${r._id}/fiscal-receipt/${y}`);Alert.alert("Reçu envoyé", `${receipt.donationCount} don(s) · ${receipt.totalValueEur} €`);}catch(e){Alert.alert("Erreur",errorMessage(e));}}}/></Card>)}</>; }
-function AdminBlog() { const [posts,setPosts]=useState([]),[show,setShow]=useState(false),[f,setF]=useState({title:"",summary:"",content:"",imageUrl:"",category:"Actualité",author:"Équipe SOS CONNECT"});const load=useCallback(()=>api.get("/blog").then(r=>setPosts(r.data)),[]);useEffect(()=>{load();},[load]);const set=k=>v=>setF(q=>({...q,[k]:v}));return <><Button title={show?"Fermer":"Créer un article"} onPress={()=>setShow(x=>!x)}/>{show&&<Card><Field label="Titre" value={f.title} onChangeText={set("title")}/><Field label="Résumé" value={f.summary} onChangeText={set("summary")} multiline/><Field label="Contenu" value={f.content} onChangeText={set("content")} multiline/><Field label="Image URL" value={f.imageUrl} onChangeText={set("imageUrl")}/><Field label="Catégorie" value={f.category} onChangeText={set("category")}/><Field label="Auteur" value={f.author} onChangeText={set("author")}/><Button title="Publier" onPress={async()=>{try{await api.post("/blog",f);setShow(false);load();}catch(e){Alert.alert("Erreur",errorMessage(e));}}}/></Card>}{posts.map(p=><Card key={p._id}><Text style={styles.cardTitle}>{p.title}</Text><Text style={styles.small}>{p.category} · {p.author}</Text><Button title="Supprimer" variant="danger" onPress={async()=>{await api.delete(`/blog/${p._id}`);load();}}/></Card>)}</>; }
+function AdminScreen() {
+  const [stats, setStats] = useState(null);
+  const [pending, setPending] = useState([]);
+
+  const load = useCallback(async () => {
+    try {
+      const [sRes, pRes] = await Promise.all([
+        api.get("/admin/dashboard"),
+        api.get("/admin/organizations/pending")
+      ]);
+      setStats(sRes.data);
+      setPending(pRes.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const setStatus = async (id, status) => {
+    try {
+      await api.patch(`/admin/organizations/${id}/status`, { status });
+      Alert.alert("Succès", `Structure ${status === "active" ? "validée" : "refusée"}.`);
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionHeaderTitle}>Administration Solid'Aid</Text>
+      {stats && (
+        <View style={styles.kpiGrid}>
+          <StatCard title="Utilisateurs" value={stats.users} icon="people" />
+          <StatCard title="Organisations" value={pending.length} icon="shield" color={colors.alert} />
+        </View>
+      )}
+
+      <Text style={[styles.sectionHeaderTitle, { marginTop: 16 }]}>Organisations en attente de validation</Text>
+      {pending.map((org) => (
+        <View key={org._id} style={styles.priorityCard}>
+          <Text style={styles.priorityCardTitle}>{org.organizationName || org.email}</Text>
+          <Text style={styles.priorityCardAddress}>Rôle : {org.role} · SIREN : {org.sirenSiret || "—"}</Text>
+          <Text style={styles.bodyMuted}>Email : {org.email} · Tél : {org.phone || "—"}</Text>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+            <PrimaryButton title="Valider" onPress={() => setStatus(org._id, "active")} style={{ flex: 1 }} />
+            <PrimaryButton title="Refuser" variant="danger" onPress={() => setStatus(org._id, "rejected")} style={{ flex: 1 }} />
+          </View>
+        </View>
+      ))}
+
+      {pending.length === 0 && (
+        <Text style={styles.bodyMuted}>Aucune organisation en attente de vérification.</Text>
+      )}
+    </ScrollView>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MODAL PROFIL & PARAMÈTRES (AVEC SUPPRESSION DE COMPTE)
+───────────────────────────────────────────────────────────── */
+
+function ProfileModal({ visible, user, logout, close }) {
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  const deleteAccount = async () => {
+    try {
+      await api.delete("/auth/me");
+      await logout();
+      Alert.alert("Compte supprimé", "Votre compte et vos données ont été définitivement supprimés.");
+      close();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide">
+      <SafeAreaView style={styles.modalSafeArea}>
+        <View style={styles.modalTopNav}>
+          <Pressable onPress={close} style={styles.modalCloseBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
+          </Pressable>
+          <Text style={styles.modalHeaderTitle}>Mon profil & Paramètres</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalScrollBody}>
+          <View style={styles.profileHeroBox}>
+            <View style={styles.profileBigAvatar}>
+              <Text style={styles.profileBigAvatarText}>
+                {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.profileHeroName}>{user.organizationName || user.email}</Text>
+            <View style={styles.zoneBadge}>
+              <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
+              <Text style={styles.zoneBadgeText}>
+                Compte {user.role === "association" ? "Association" : user.role === "restaurant" ? "Commerce" : user.role === "admin" ? "Admin" : "Citoyen"} actif
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.profileInfoList}>
+            <View style={styles.profileInfoRow}>
+              <Text style={styles.profileInfoLabel}>Adresse email</Text>
+              <Text style={styles.profileInfoValue}>{user.email}</Text>
+            </View>
+            {user.sirenSiret && (
+              <View style={styles.profileInfoRow}>
+                <Text style={styles.profileInfoLabel}>Numéro SIREN / SIRET</Text>
+                <Text style={styles.profileInfoValue}>{user.sirenSiret}</Text>
+              </View>
+            )}
+            {user.address && (
+              <View style={styles.profileInfoRow}>
+                <Text style={styles.profileInfoLabel}>Adresse</Text>
+                <Text style={styles.profileInfoValue}>{user.address}</Text>
+              </View>
+            )}
+          </View>
+
+          <Pressable onPress={() => setPrivacyOpen(true)} style={styles.settingsMenuBtn}>
+            <Ionicons name="shield-outline" size={20} color={colors.primary} />
+            <Text style={styles.settingsMenuBtnText}>Politique de Confidentialité (RGPD)</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+
+          <Pressable onPress={() => setDeleteConfirm(true)} style={styles.settingsMenuBtnDanger}>
+            <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            <Text style={styles.settingsMenuBtnTextDanger}>Supprimer mon compte et mes données</Text>
+          </Pressable>
+
+          <PrimaryButton title="Déconnexion" variant="white" icon="log-out-outline" onPress={logout} style={{ marginTop: 16 }} />
+        </ScrollView>
+
+        {/* Confirmation Modal Suppression */}
+        {deleteConfirm && (
+          <Modal transparent visible animationType="fade">
+            <View style={styles.confirmOverlay}>
+              <View style={styles.confirmBox}>
+                <Ionicons name="alert-circle" size={44} color={colors.danger} />
+                <Text style={styles.confirmBoxTitle}>Supprimer définitivement le compte ?</Text>
+                <Text style={styles.confirmBoxText}>
+                  Cette action est irréversible. L'ensemble de vos données, informations et signalements associés seront immédiatement supprimés.
+                </Text>
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <Pressable onPress={() => setDeleteConfirm(false)} style={styles.backStepButton}>
+                    <Text style={styles.backStepButtonText}>Annuler</Text>
+                  </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <PrimaryButton title="Confirmer la suppression" variant="danger" onPress={deleteAccount} />
+                  </View>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function PendingScreen({ user, logout }) {
+  return (
+    <SafeAreaView style={styles.loadingScreen}>
+      <Ionicons name="time" size={60} color={colors.alert} />
+      <Text style={styles.authTitle}>Compte en cours de vérification</Text>
+      <Text style={[styles.authSubtitle, { textAlign: "center" }]}>
+        Votre structure ({user.organizationName || user.email}) est en cours d'examen par notre équipe. Vous recevrez un e-mail dès validation.
+      </Text>
+      <PrimaryButton title="Déconnexion" variant="white" onPress={logout} />
+    </SafeAreaView>
+  );
+}
 
 function PrivacyModal({ visible, close }) {
   return (
     <Modal visible={visible} animationType="slide">
-      <SafeAreaView style={styles.app}>
-        <ScrollView contentContainerStyle={styles.page}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.sectionTitle}>Confidentialité (RGPD)</Text>
-            <Pressable onPress={close}><Ionicons name="close" size={28} color="#16352a"/></Pressable>
-          </View>
-          <Text style={styles.small}>SOS CONNECT · Conformité Google Play Console & RGPD 2026</Text>
-          <Card>
+      <SafeAreaView style={styles.modalSafeArea}>
+        <View style={styles.modalTopNav}>
+          <Pressable onPress={close} style={styles.modalCloseBtn}>
+            <Ionicons name="close" size={24} color={colors.primaryDark} />
+          </Pressable>
+          <Text style={styles.modalHeaderTitle}>Politique de Confidentialité</Text>
+        </View>
+        <ScrollView contentContainerStyle={styles.modalScrollBody}>
+          <Text style={styles.bodyMuted}>Conformité Google Play Console & RGPD 2026</Text>
+          <View style={styles.kpiCard}>
             <Text style={styles.cardTitle}>1. Données collectées</Text>
-            <Text style={styles.body}>• Géolocalisation : utilisée uniquement lors d'un signalement ou de l'inscription pour situer la zone d'intervention. Aucun suivi en arrière-plan.{"\n"}• Appareil photo et Photos : utilisé facultativement pour photographier ou joindre une image au signalement.{"\n"}• Compte : email et informations d'identification strictement nécessaires.</Text>
-          </Card>
-          <Card>
-            <Text style={styles.cardTitle}>2. Utilisation solidaire & Partage</Text>
-            <Text style={styles.body}>Vos données ne sont ni vendues, ni louées, ni cédées à des régies publicitaires. Les signalements sont uniquement orientés vers les associations et partenaires humanitaires de votre secteur.</Text>
-          </Card>
-          <Card>
-            <Text style={styles.cardTitle}>3. Suppression du compte et des données</Text>
-            <Text style={styles.body}>Conformément aux normes Google Play et au RGPD, vous disposez d'un droit de suppression total et irréversible de votre compte et de toutes vos données directement dans l'application (« Supprimer mon compte ») ou par formulaire web sur notre site officiel.</Text>
-          </Card>
-          <Button title="Fermer" onPress={close}/>
+            <Text style={styles.bodyMuted}>
+              • Géolocalisation : utilisée uniquement lors d'un signalement ou pour définir la zone d'action associative. Aucun suivi en arrière-plan.{"\n"}
+              • Caméra & Photos : utilisées facultativement pour illustrer une situation observée ou un don d'invendus.{"\n"}
+              • Compte : e-mail et coordonnées d'accès chiffrées en HTTPS/TLS.
+            </Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Text style={styles.cardTitle}>2. Partage et protection</Text>
+            <Text style={styles.bodyMuted}>
+              Aucune donnée n'est commercialisée ou transmise à des régies publicitaires. Les signalements sont uniquement accessibles aux associations humanitaires habilitées du secteur géographique concerné.
+            </Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Text style={styles.cardTitle}>3. Suppression de compte</Text>
+            <Text style={styles.bodyMuted}>
+              Vous pouvez à tout moment supprimer votre compte directement dans l'application ou sur notre page web officielle : /delete-account.
+            </Text>
+          </View>
+          <PrimaryButton title="Fermer" onPress={close} style={{ marginTop: 12 }} />
         </ScrollView>
       </SafeAreaView>
     </Modal>
   );
 }
 
-function Confirm({ visible, title, text, confirm, close }) { return <Modal transparent visible={visible} animationType="fade"><View style={styles.overlay}><Card><Text style={styles.sectionTitle}>{title}</Text><Text style={styles.body}>{text}</Text><View style={styles.wrap}><Button title="Annuler" variant="secondary" onPress={close}/><Button title="Confirmer" variant="danger" onPress={confirm}/></View></Card></View></Modal>; }
+/* ─────────────────────────────────────────────────────────────
+   STYLES ET DESIGN SYSTEM DE HAUTE PRÉCISION
+───────────────────────────────────────────────────────────── */
 
-const colors={green:"#0F7D63",orange:"#F59E0B",red:"#DC2626"};
-const styles=StyleSheet.create({app:{flex:1,backgroundColor:"#f5faf7"},flex:{flex:1},center:{flex:1,justifyContent:"center",alignItems:"center",padding:28,gap:16,backgroundColor:"#f5faf7"},content:{flex:1},page:{padding:18,gap:14,paddingBottom:32},hero:{paddingVertical:38,gap:15},logo:{fontSize:22,fontWeight:"900",color:colors.green,letterSpacing:.5},topLogo:{fontSize:16,fontWeight:"900",color:colors.green},subtitle:{color:"#63786f",fontSize:13},heroTitle:{fontSize:37,lineHeight:43,fontWeight:"900",color:"#16352a"},section:{gap:12,marginTop:8},sectionTitle:{fontSize:24,fontWeight:"800",color:"#16352a"},card:{backgroundColor:"#fff",borderColor:"#dbe9e3",borderWidth:1,borderRadius:14,padding:15,gap:8,marginBottom:1},voiceCard:{backgroundColor:"#edf8f3"},cardTitle:{fontSize:16,fontWeight:"800",color:"#16352a"},body:{fontSize:14,lineHeight:21,color:"#456158"},small:{fontSize:12,lineHeight:18,color:"#667d74"},button:{minHeight:43,borderRadius:10,justifyContent:"center",paddingHorizontal:15,alignSelf:"flex-start"},buttonInside:{flexDirection:"row",alignItems:"center",gap:7},button_primary:{backgroundColor:colors.green},button_secondary:{backgroundColor:"#fff",borderColor:colors.green,borderWidth:1},button_danger:{backgroundColor:colors.red},buttonText:{color:"#fff",fontWeight:"800",fontSize:14},buttonTextSecondary:{color:colors.green},disabled:{opacity:.55},field:{gap:6},label:{fontSize:13,fontWeight:"800",color:"#36564a",marginTop:4},input:{backgroundColor:"#fff",borderColor:"#cfe0d9",borderWidth:1,borderRadius:10,paddingHorizontal:12,paddingVertical:11,fontSize:15,color:"#17352a"},textarea:{minHeight:92,textAlignVertical:"top"},tabs:{flexDirection:"row",gap:8,marginVertical:8},wrap:{flexDirection:"row",gap:8,flexWrap:"wrap",alignItems:"center"},chip:{borderWidth:1,borderColor:"#c7dcd3",backgroundColor:"#fff",paddingHorizontal:11,paddingVertical:8,borderRadius:20},chipText:{fontWeight:"700",fontSize:12,color:"#426258"},topbar:{paddingHorizontal:18,paddingVertical:12,backgroundColor:"#fff",borderBottomWidth:1,borderBottomColor:"#dbe9e3",flexDirection:"row",justifyContent:"space-between",alignItems:"center"},nav:{height:64,backgroundColor:"#fff",borderTopColor:"#dbe9e3",borderTopWidth:1,flexDirection:"row",justifyContent:"space-around"},navItem:{alignItems:"center",justifyContent:"center",gap:3,paddingHorizontal:7},navText:{fontSize:10,color:"#71827b",fontWeight:"700"},navTextActive:{color:colors.green},dangerLink:{color:colors.red,textAlign:"center",fontSize:12,padding:7,fontWeight:"700"},rowBetween:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:8},grid:{flexDirection:"row",flexWrap:"wrap",gap:10},metric:{width:"47%"},metricValue:{fontSize:28,fontWeight:"900",color:colors.green},urgency:{fontSize:11,fontWeight:"900"},reportImage:{width:"100%",height:150,borderRadius:9,marginTop:4},post:{width:245,marginRight:12},postImage:{height:110,borderRadius:9,backgroundColor:"#e5eee9"},overlay:{flex:1,backgroundColor:"rgba(0,0,0,.42)",padding:25,justifyContent:"center"}});
-styles.link = { color: colors.green, fontWeight: "800", fontSize: 13, marginBottom: 8 };
-styles.brandRow = { flexDirection: "row", alignItems: "center", gap: 10 };
-styles.brandMark = { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.green, alignItems: "center", justifyContent: "center", shadowColor: colors.green, shadowOpacity: 0.22, shadowRadius: 12, elevation: 4 };
-styles.heroImage = { width: "100%", height: 215, borderRadius: 24, resizeMode: "cover", marginTop: 4 };
-styles.app = { flex: 1, backgroundColor: "#F4FAF8" };
-styles.page = { padding: 20, gap: 16, paddingBottom: 34, backgroundColor: "#F4FAF8" };
-styles.hero = { paddingVertical: 18, gap: 16 };
-styles.logo = { fontSize: 22, fontWeight: "900", color: "#063D2E", letterSpacing: 0.4 };
-styles.subtitle = { color: "#6B8179", fontSize: 11, marginTop: 2 };
-styles.heroTitle = { fontSize: 34, lineHeight: 39, fontWeight: "900", color: "#063D2E", letterSpacing: -0.5 };
-styles.heroImage = { width: "100%", height: 205, borderRadius: 24, resizeMode: "cover", marginTop: 2 };
-styles.heroBell = { marginLeft: "auto", alignSelf: "flex-start", marginTop: 8 };
-styles.button = { minHeight: 50, borderRadius: 14, justifyContent: "center", paddingHorizontal: 18, alignSelf: "stretch", shadowColor: colors.green, shadowOpacity: 0.14, shadowRadius: 8, elevation: 2 };
-styles.button_primary = { backgroundColor: colors.green };
-styles.button_secondary = { backgroundColor: "#FFFFFF", borderColor: colors.green, borderWidth: 1 };
-styles.buttonText = { color: "#FFFFFF", fontWeight: "800", fontSize: 14 };
-styles.buttonTextSecondary = { color: "#08745A" };
-styles.section = { gap: 12, marginTop: 8 };
-styles.sectionTitle = { fontSize: 22, fontWeight: "900", color: "#063D2E", letterSpacing: -0.2 };
-styles.card = { backgroundColor: "#FFFFFF", borderColor: "#DCEBE5", borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, marginBottom: 1, shadowColor: "#063D2E", shadowOpacity: 0.04, shadowRadius: 10, elevation: 1 };
-styles.cardTitle = { fontSize: 15, fontWeight: "800", color: "#063D2E" };
-styles.body = { fontSize: 14, lineHeight: 21, color: "#46665D" };
-styles.small = { fontSize: 12, lineHeight: 18, color: "#718A83" };
-styles.featureGrid = { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4 };
-styles.feature = { width: "47.5%", minHeight: 92, alignItems: "center", justifyContent: "center", padding: 10, backgroundColor: "#E8F6F1", borderRadius: 16, gap: 3 };
-styles.featureTitle = { fontSize: 12, fontWeight: "800", color: "#063D2E" };
-styles.featureText = { fontSize: 10, color: "#6B8179", textAlign: "center" };
-styles.topbar = { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#DCEBE5", flexDirection: "row", justifyContent: "space-between", alignItems: "center" };
-styles.topLogo = { fontSize: 17, fontWeight: "900", color: "#063D2E", letterSpacing: 0.2 };
-styles.nav = { height: 70, backgroundColor: "#FFFFFF", borderTopColor: "#DCEBE5", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-around", paddingTop: 5 };
-styles.navItem = { alignItems: "center", justifyContent: "center", gap: 3, paddingHorizontal: 7, minWidth: 62 };
-styles.navText = { fontSize: 10, color: "#718A83", fontWeight: "700" };
-styles.navTextActive = { color: colors.green };
-styles.input = { backgroundColor: "#FFFFFF", borderColor: "#DCEBE5", borderWidth: 1, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: "#17352A" };
-styles.label = { fontSize: 12, fontWeight: "800", color: "#36564A", marginTop: 4 };
-styles.chip = { borderWidth: 1, borderColor: "#CDE4DB", backgroundColor: "#FFFFFF", paddingHorizontal: 12, paddingVertical: 9, borderRadius: 20 };
-styles.quickModal = { flex: 1, backgroundColor: "#F4FAF8" };
-styles.quickPage = { padding: 20, gap: 14, paddingBottom: 28 };
-styles.quickTitle = { fontSize: 22, fontWeight: "900", color: "#063D2E" };
-styles.quickIntro = { fontSize: 13, color: "#46665D", marginTop: 6 };
-styles.quickClose = { padding: 4, marginLeft: 8 };
-styles.quickBlock = { gap: 7 };
-styles.quickLabel = { fontSize: 13, fontWeight: "900", color: "#063D2E" };
-styles.quickUrgencies = { flexDirection: "row", gap: 8 };
-styles.quickUrgency = { flex: 1, minHeight: 72, padding: 9, borderRadius: 13, borderWidth: 1, borderColor: "#DCEBE5", backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" };
-styles.quickUrgencySelected = { backgroundColor: "#0F7D63", borderColor: "#0F7D63" };
-styles.quickUrgencyRed = { backgroundColor: "#FEE2E2", borderColor: "#FECACA" };
-styles.quickUrgencyTitle = { fontSize: 13, fontWeight: "900", color: "#063D2E" };
-styles.quickUrgencyTitleSelected = { color: "#FFFFFF" };
-styles.quickUrgencyText = { fontSize: 9, color: "#718A83", textAlign: "center", marginTop: 3 };
-styles.quickActions = { flexDirection: "row", gap: 10, alignItems: "center", marginTop: 2 };
-styles.photoActions = { flexDirection: "row", gap: 10 };
-styles.photoButton = { flex: 1, minHeight: 74, borderWidth: 1, borderStyle: "dashed", borderColor: "#B9DDD2", borderRadius: 14, backgroundColor: "#F8FCFA", alignItems: "center", justifyContent: "center", gap: 5, padding: 8 };
-styles.photoButtonText = { color: "#08745A", fontSize: 12, fontWeight: "800", textAlign: "center" };
-styles.photoPreview = { height: 150, marginTop: 8, borderRadius: 14, overflow: "hidden", position: "relative", backgroundColor: "#E8F7F2" };
-styles.photoPreviewImage = { width: "100%", height: "100%", resizeMode: "cover" };
-styles.photoRemove = { position: "absolute", top: 8, right: 8, backgroundColor: "#FFFFFF", borderRadius: 20 };
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  appContainer: {
+    flex: 1,
+    backgroundColor: Platform.OS === "web" ? "#EBF3EF" : colors.background,
+    alignItems: "center"
+  },
+  mainShell: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: colors.background,
+    position: "relative"
+  },
+  mainShellLarge: {
+    maxWidth: 680,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#063D2E",
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 8
+  },
+  scrollPage: {
+    padding: 18,
+    paddingBottom: 110,
+    gap: 16,
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center"
+  },
+  loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center", padding: 30, gap: 16, backgroundColor: colors.background },
+  loadingText: { color: colors.textSecondary, fontSize: 14, fontWeight: "600" },
+
+  // Brand Header
+  brandContainer: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandLogoBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
+    overflow: "hidden"
+  },
+  brandLogoImage: {
+    width: 40,
+    height: 40
+  },
+  brandText: { fontSize: 20, fontWeight: "900", color: colors.primaryDark, letterSpacing: 0.3 },
+  brandTagline: { fontSize: 10, fontWeight: "700", color: colors.textMuted },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  bellButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+
+  // Hero Card Screen 1
+  heroCard: {
+    borderRadius: 24,
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: colors.cardBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2
+  },
+  heroImageVisual: { width: "100%", height: 180, maxHeight: 220, resizeMode: "cover" },
+  heroOverlay: { padding: 18, backgroundColor: "#FFFFFF", gap: 6 },
+  heroMainTitle: { fontSize: 26, lineHeight: 32, fontWeight: "900", color: colors.primaryDark, letterSpacing: -0.4 },
+  heroMainSubtitle: { fontSize: 13, lineHeight: 19, color: colors.textSecondary },
+
+  // CTAs
+  ctaGroup: { gap: 10 },
+  primaryButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 2
+  },
+  buttonSecondary: { backgroundColor: colors.primaryDark },
+  buttonWhite: { backgroundColor: "#FFFFFF", borderWidth: 1.5, borderColor: colors.primary },
+  buttonDanger: { backgroundColor: colors.danger },
+  buttonContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  primaryButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800", flex: 1, textAlign: "left" },
+  buttonTextSecondary: { color: colors.primary },
+
+  // 4 Feature Cards (Pastel Screen 1) - Responsive Flex Basis
+  featureGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  featureCard: {
+    flexGrow: 1,
+    flexBasis: "46%",
+    minWidth: 120,
+    maxWidth: "49%",
+    borderRadius: 18,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    minHeight: 92
+  },
+  featureIconCircle: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  featureCardTitle: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
+  featureCardText: { fontSize: 11, color: colors.textSecondary, textAlign: "center" },
+
+  // Banner
+  bannerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.mintSoft,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.mintSurface
+  },
+  bannerIconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  bannerTitle: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
+  bannerText: { fontSize: 11, color: colors.textSecondary },
+
+  // Actualités
+  newsCard: { width: 220, backgroundColor: "#FFFFFF", borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: colors.border, marginRight: 12 },
+  newsImage: { width: "100%", height: 105, resizeMode: "cover" },
+  newsCardTitle: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
+  newsCardSummary: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
+
+  // Inputs
+  inputGroup: { gap: 6 },
+  inputLabel: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    minHeight: 50
+  },
+  inputIcon: { marginRight: 10 },
+  inputField: { flex: 1, fontSize: 14, color: colors.primaryDark, paddingVertical: 10 },
+  eyeIcon: { padding: 4 },
+
+  // KPI Grid - Responsive Flex Basis
+  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  kpiCard: {
+    flexGrow: 1,
+    flexBasis: "46%",
+    minWidth: 120,
+    maxWidth: "49%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1
+  },
+  kpiIconBox: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  kpiValue: { fontSize: 24, fontWeight: "900" },
+  kpiTitle: { fontSize: 12, fontWeight: "800", color: colors.primaryDark },
+  kpiSubtitle: { fontSize: 10, color: colors.textMuted },
+
+  // Welcome Hero
+  welcomeHeroCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  welcomeHeroHello: { fontSize: 13, color: colors.textMuted, fontWeight: "700" },
+  welcomeHeroName: { fontSize: 22, fontWeight: "900", color: colors.primaryDark },
+  zoneBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.mintSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginTop: 6
+  },
+  zoneBadgeText: { fontSize: 11, fontWeight: "800", color: colors.primary },
+
+  // Map Container
+  mapContainer: {
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3
+  },
+  mapNativeCard: {
+    backgroundColor: colors.mintSoft,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.mintSurface
+  },
+
+  // Priority Reports
+  priorityCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+    marginBottom: 10
+  },
+  priorityCardHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  urgencyDot: { width: 10, height: 10, borderRadius: 5 },
+  priorityCardTitle: { fontSize: 14, fontWeight: "800", color: colors.primaryDark, flex: 1 },
+  statusBadgeSmall: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  statusBadgeSmallText: { fontSize: 10, fontWeight: "800" },
+  priorityCardAddress: { fontSize: 12, color: colors.textSecondary },
+  priorityCardComment: { fontSize: 12, color: colors.textMuted, fontStyle: "italic" },
+  priorityCardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  actionChipButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignSelf: "flex-start"
+  },
+  actionChipButtonText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+
+  // Citizen Action
+  citizenActionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    textAlign: "center",
+    gap: 8
+  },
+  citizenActionTitle: { fontSize: 16, fontWeight: "900", color: colors.primaryDark },
+  citizenActionText: { fontSize: 12, color: colors.textSecondary, textAlign: "center", lineHeight: 18 },
+
+  // Modals & Stepper
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center"
+  },
+  modalTopNav: { flexDirection: "row", alignItems: "center", padding: 18, gap: 12, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: "#FFFFFF" },
+  modalCloseBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
+  modalHeaderTitle: { fontSize: 18, fontWeight: "900", color: colors.primaryDark },
+  modalHeaderSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  modalScrollBody: { padding: 20, gap: 18, paddingBottom: 40 },
+
+  stepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  stepCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.borderLight, alignItems: "center", justifyContent: "center" },
+  stepCircleActive: { backgroundColor: colors.primary },
+  stepNumber: { fontSize: 13, fontWeight: "800", color: colors.textMuted },
+  stepNumberActive: { color: "#FFFFFF" },
+  stepLine: { width: 50, height: 3, backgroundColor: colors.borderLight, marginHorizontal: 6 },
+  stepLineActive: { backgroundColor: colors.primary },
+
+  // Categories Grid (Screen 2 du Mockup) - Responsive Flex Basis
+  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  categoryTile: {
+    flexGrow: 1,
+    flexBasis: "29%",
+    minWidth: 92,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 84
+  },
+  categoryIconCircle: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  categoryTileText: { fontSize: 11, fontWeight: "800", color: colors.primaryDark, textAlign: "center" },
+
+  // Urgency Selector - Responsive Flex Basis
+  urgencyRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  urgencyOption: {
+    flexGrow: 1,
+    flexBasis: "29%",
+    minWidth: 92,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 10,
+    alignItems: "center"
+  },
+  urgencyOptionTitle: { fontSize: 12, fontWeight: "800" },
+  urgencyOptionDesc: { fontSize: 9, color: colors.textMuted, textAlign: "center", marginTop: 2 },
+
+  gpsSelectButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10
+  },
+  gpsIconCircle: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  gpsSelectText: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.primaryDark },
+  backStepButton: {
+    minHeight: 52,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  backStepButtonText: { fontSize: 14, fontWeight: "800", color: colors.textSecondary },
+
+  mediaButtonsRow: { flexDirection: "row", gap: 12 },
+  mediaBtn: {
+    flex: 1,
+    minHeight: 64,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.primary,
+    borderRadius: 14,
+    backgroundColor: colors.mintSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4
+  },
+  mediaBtnText: { fontSize: 12, fontWeight: "800", color: colors.primary },
+  imagePreviewWrap: { position: "relative", height: 160, borderRadius: 16, overflow: "hidden" },
+  imagePreview: { width: "100%", height: "100%", resizeMode: "cover" },
+  removeImageBadge: { position: "absolute", top: 8, right: 8, backgroundColor: colors.danger, borderRadius: 14, padding: 4 },
+  summaryNotice: { flexDirection: "row", gap: 10, backgroundColor: colors.mintSoft, borderRadius: 14, padding: 12, alignItems: "center" },
+  summaryNoticeText: { fontSize: 12, color: colors.primaryDark, flex: 1, lineHeight: 17 },
+
+  // Auth Screen (Screen 3 Mockup)
+  authTitle: { fontSize: 26, fontWeight: "900", color: colors.primaryDark, textAlign: "center" },
+  authSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: "center", marginTop: 4, marginBottom: 12 },
+  authTabs: { flexDirection: "row", backgroundColor: "#FFFFFF", borderRadius: 14, padding: 4, borderWidth: 1, borderColor: colors.border, marginBottom: 14 },
+  authTabItem: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
+  authTabItemActive: { backgroundColor: colors.primary },
+  authTabText: { fontSize: 13, fontWeight: "700", color: colors.textSecondary },
+  authTabTextActive: { color: "#FFFFFF", fontWeight: "800" },
+  rolePicker: { flexDirection: "row", gap: 8, marginTop: 6, flexWrap: "wrap" },
+  roleChip: {
+    flexGrow: 1,
+    flexBasis: "30%",
+    minWidth: 95,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  roleChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  roleChipText: { fontSize: 11, fontWeight: "700", color: colors.primaryDark },
+  roleChipTextActive: { color: "#FFFFFF" },
+  backArrowBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, marginBottom: 6 },
+  legalSmallLink: { fontSize: 11, color: colors.primary, textDecorationLine: "underline", textAlign: "center" },
+
+  // Topbar
+  topbarModern: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center"
+  },
+  topbarRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  userProfilePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.mintSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.mintSurface
+  },
+  userAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  userAvatarText: { color: "#FFFFFF", fontWeight: "900", fontSize: 11 },
+  userNamePill: { fontSize: 12, fontWeight: "800", color: colors.primaryDark, maxWidth: 110 },
+  userRolePill: { fontSize: 9, color: colors.primary, fontWeight: "700" },
+
+  // Bottom Tab Bar (Match Mockup Style) - Responsive Centering
+  bottomTabBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center",
+    marginHorizontal: "auto",
+    height: 72,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingHorizontal: 8,
+    paddingBottom: 6,
+    zIndex: 10
+  },
+  tabBarItem: { alignItems: "center", justifyContent: "center", gap: 3, minWidth: 54 },
+  tabBarText: { fontSize: 10, color: colors.textMuted, fontWeight: "700" },
+  tabBarTextActive: { color: colors.primary, fontWeight: "800" },
+  centerFloatingButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    top: -12,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6
+  },
+
+  // Map Filter Bar
+  mapFilterBar: {
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center"
+  },
+  mapFilterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+  mapFilterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  mapFilterChipText: { fontSize: 11, fontWeight: "700", color: colors.primaryDark },
+  mapFilterChipTextActive: { color: "#FFFFFF" },
+
+  // Report Items List
+  sectionContainer: { gap: 12 },
+  sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sectionHeaderTitle: { fontSize: 18, fontWeight: "900", color: colors.primaryDark },
+  seeAllLink: { fontSize: 12, fontWeight: "800", color: colors.primary },
+  smallAddBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  smallAddBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  filterChipsRow: { flexDirection: "row", gap: 8, marginVertical: 4, flexWrap: "wrap" },
+  filterChipItem: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: colors.border },
+  filterChipItemActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
+  filterChipText: { fontSize: 11, fontWeight: "700", color: colors.textSecondary },
+  filterChipTextActive: { color: "#FFFFFF" },
+
+  reportItemCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 8, marginBottom: 8 },
+  reportCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  reportItemTitle: { fontSize: 15, fontWeight: "800", color: colors.primaryDark },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  statusPillText: { fontSize: 10, fontWeight: "800" },
+  reportItemMeta: { fontSize: 12, color: colors.textMuted },
+  reportItemComment: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  needsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
+  needTagPill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.mintSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  needTagText: { fontSize: 11, fontWeight: "700", color: colors.primary },
+  imageCardWrapper: { position: "relative", width: "100%", height: 180, borderRadius: 14, overflow: "hidden", marginTop: 6 },
+  reportCardImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  priorityImageWrapper: { position: "relative", width: "100%", height: 130, borderRadius: 12, overflow: "hidden", marginBottom: 8 },
+  priorityCardImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  imageZoomBadge: { position: "absolute", bottom: 8, right: 8, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(6,61,46,0.85)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  imageZoomBadgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
+  reportActionRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  takeActionBtn: { flex: 1, backgroundColor: colors.mintSoft, paddingVertical: 9, borderRadius: 10, alignItems: "center" },
+  takeActionBtnText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  resolveActionBtn: { flex: 1, backgroundColor: colors.primary, paddingVertical: 9, borderRadius: 10, alignItems: "center" },
+  resolveActionBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+
+  // Donations
+  donationCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 8, marginBottom: 10 },
+  donationImageWrapper: { position: "relative", width: "100%", height: 180, borderRadius: 14, overflow: "hidden", marginBottom: 8 },
+  donationCardImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  donationCardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  donationIconBox: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.mintSoft, alignItems: "center", justifyContent: "center" },
+  donationTitle: { fontSize: 15, fontWeight: "800", color: colors.primaryDark },
+  donationQty: { fontSize: 12, color: colors.primary, fontWeight: "700" },
+  donationMeta: { fontSize: 12, color: colors.textMuted },
+
+  // Lightbox Modal
+  lightboxOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "space-between" },
+  lightboxHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14 },
+  lightboxCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
+  lightboxTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", flex: 1, textAlign: "center", marginHorizontal: 12 },
+  lightboxBody: { flex: 1, justifyContent: "center", alignItems: "center", padding: 12 },
+  lightboxImage: { width: "100%", height: "85%", resizeMode: "contain" },
+
+  // Profile Modal
+  profileHeroBox: { alignItems: "center", paddingVertical: 16, gap: 8 },
+  profileBigAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  profileBigAvatarText: { color: "#FFFFFF", fontSize: 24, fontWeight: "900" },
+  profileHeroName: { fontSize: 20, fontWeight: "900", color: colors.primaryDark },
+  profileInfoList: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12, marginVertical: 10 },
+  profileInfoRow: { gap: 2 },
+  profileInfoLabel: { fontSize: 11, fontWeight: "700", color: colors.textMuted },
+  profileInfoValue: { fontSize: 14, fontWeight: "700", color: colors.primaryDark },
+  settingsMenuBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FFFFFF", padding: 14, borderRadius: 14, borderWidth: 1, borderColor: colors.border },
+  settingsMenuBtnText: { flex: 1, fontSize: 13, fontWeight: "800", color: colors.primaryDark },
+  settingsMenuBtnDanger: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FEF2F2", padding: 14, borderRadius: 14, borderWidth: 1, borderColor: "#FECACA", marginTop: 8 },
+  settingsMenuBtnTextDanger: { fontSize: 13, fontWeight: "800", color: colors.danger },
+
+  // Confirm Modal
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24, alignItems: "center" },
+  confirmBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    textAlign: "center",
+    gap: 10,
+    width: "100%",
+    maxWidth: 480
+  },
+  confirmBoxTitle: { fontSize: 18, fontWeight: "900", color: colors.primaryDark, textAlign: "center" },
+  confirmBoxText: { fontSize: 13, color: colors.textSecondary, textAlign: "center", lineHeight: 19 },
+
+  // Common Helpers
+  bodyMuted: { fontSize: 12, color: colors.textSecondary },
+  emptyCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 24, alignItems: "center", gap: 8, borderWidth: 1, borderColor: colors.border },
+  emptyCardTitle: { fontSize: 16, fontWeight: "800", color: colors.primaryDark },
+  legalFooterLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 16 },
+  legalFooterText: { fontSize: 12, color: colors.primary, fontWeight: "800", textDecorationLine: "underline" },
+  formSectionLabel: { fontSize: 14, fontWeight: "900", color: colors.primaryDark }
+});

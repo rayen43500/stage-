@@ -13,7 +13,7 @@ router.use(auth, requireValidatedOrganization);
 const donationSchema = z.object({
   description: z.string().min(3),
   quantity: z.string().min(1),
-  photoUrl: z.string().url().optional(),
+  photoUrl: z.string().optional(),
   availableDate: z.coerce.date(),
   pickupSlots: z.array(z.object({ start: z.string(), end: z.string() })).default([])
 });

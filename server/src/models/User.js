@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
     sirenSiret: String,
     phone: String,
     address: String,
+    avatarUrl: String,
     services: [{ type: String, enum: ["hygiene", "clothes", "food", "shelter", "health", "psychological", "other"] }],
     interventionZone: {
       center: geoPointSchema,

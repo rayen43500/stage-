@@ -9,7 +9,7 @@ router.get("/privacy", (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Politique de Confidentialité — SOS CONNECT</title>
+  <title>Politique de Confidentialité — Solid'Aid</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
     .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 36px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
@@ -25,10 +25,10 @@ router.get("/privacy", (req, res) => {
 <body>
   <div class="container">
     <span class="badge">Conformité Google Play & RGPD</span>
-    <h1>Politique de Confidentialité — SOS CONNECT</h1>
+    <h1>Politique de Confidentialité — Solid'Aid</h1>
     <p><em>Dernière mise à jour : 19 octobre 2026</em></p>
 
-    <p>L'application <strong>SOS CONNECT</strong> est une plateforme solidaire dédiée à la coordination citoyenne, humanitaire et à la lutte contre le gaspillage alimentaire. Nous accordons une importance primordiale au respect de votre vie privée et à la protection de vos données personnelles.</p>
+    <p>L'application <strong>Solid'Aid</strong> est une plateforme solidaire dédiée à la coordination citoyenne, humanitaire et à la lutte contre le gaspillage alimentaire. Nous accordons une importance primordiale au respect de votre vie privée et à la protection de vos données personnelles.</p>
 
     <h2>1. Données collectées et finalités</h2>
     <ul>
@@ -55,11 +55,11 @@ router.get("/privacy", (req, res) => {
     <h2>5. Contact du responsable de traitement</h2>
     <p>Pour toute question relative à cette politique ou pour exercer vos droits :<br>
     <strong>Email :</strong> <a href="mailto:contact@soslink.fr">contact@soslink.fr</a><br>
-    <strong>Équipe SOS CONNECT</strong>
+    <strong>Équipe Solid'Aid</strong>
     </p>
 
     <div class="footer">
-      <p>© 2026 SOS CONNECT. Tous droits réservés.</p>
+      <p>© 2026 Solid'Aid. Tous droits réservés.</p>
     </div>
   </div>
 </body>
@@ -73,7 +73,7 @@ router.get("/delete-account", (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Suppression de compte — SOS CONNECT</title>
+  <title>Suppression de compte — Solid'Aid</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
     .container { max-width: 650px; margin: 0 auto; background: #fff; padding: 36px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
@@ -91,7 +91,7 @@ router.get("/delete-account", (req, res) => {
 <body>
   <div class="container">
     <h1>Demande de suppression de compte & données</h1>
-    <p>Conformément aux règles de Google Play et au RGPD, vous pouvez demander à tout moment la suppression intégrale de votre compte <strong>SOS CONNECT</strong> et de l'ensemble des données associées.</p>
+    <p>Conformément aux règles de Google Play et au RGPD, vous pouvez demander à tout moment la suppression intégrale de votre compte <strong>Solid'Aid</strong> et de l'ensemble des données associées.</p>
 
     <div class="box">
       <strong>Ce qui sera définitivement supprimé :</strong>
