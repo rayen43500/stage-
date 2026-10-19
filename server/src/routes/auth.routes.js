@@ -81,6 +81,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", auth, (req, res) => res.json({ user: req.user }));
 
 const profileUpdateSchema = z.object({
+  email: z.string().email().optional(),
   organizationName: z.string().optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -93,12 +94,25 @@ const profileUpdateSchema = z.object({
 router.patch("/profile", auth, async (req, res) => {
   const data = profileUpdateSchema.parse(req.body);
   const updates = {};
-  if (data.organizationName !== undefined) updates.organizationName = data.organizationName;
-  if (data.phone !== undefined) updates.phone = data.phone;
-  if (data.address !== undefined) updates.address = data.address;
+
+  if (data.email !== undefined && data.email.toLowerCase() !== req.user.email.toLowerCase()) {
+    const existing = await User.findOne({
+      email: data.email.toLowerCase().trim(),
+      _id: { $ne: req.user._id },
+      deletedAt: { $exists: false }
+    });
+    if (existing) {
+      return res.status(409).json({ message: "Cette adresse e-mail est déjà associée à un autre compte." });
+    }
+    updates.email = data.email.toLowerCase().trim();
+  }
+
+  if (data.organizationName !== undefined) updates.organizationName = data.organizationName.trim();
+  if (data.phone !== undefined) updates.phone = data.phone.trim();
+  if (data.address !== undefined) updates.address = data.address.trim();
   if (data.avatarUrl !== undefined) updates.avatarUrl = data.avatarUrl;
   if (data.services !== undefined && req.user.role === "association") updates.services = data.services;
-  if (data.helloAssoUrl !== undefined) updates.helloAssoUrl = data.helloAssoUrl;
+  if (data.helloAssoUrl !== undefined) updates.helloAssoUrl = data.helloAssoUrl.trim();
   if (data.radiusKm !== undefined && req.user.role === "association") {
     updates["interventionZone.radiusKm"] = data.radiusKm;
   }

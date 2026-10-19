@@ -228,7 +228,9 @@ function ImageLightboxModal({ visible, image, close }) {
    CARTE INTERACTIVE (LEAFLET / OPENSTREETMAP)
 ───────────────────────────────────────────────────────────── */
 
-function ReportsMap({ reports = [], height = 340, onSelectReport }) {
+function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport }) {
+  const isFullMap = height === "100%" || isFull;
+
   if (Platform.OS === "web") {
     const validReports = reports.filter(
       (r) => r.location?.coordinates && r.location.coordinates.length === 2
@@ -256,8 +258,8 @@ function ReportsMap({ reports = [], height = 340, onSelectReport }) {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    #map { height: 100%; width: 100%; }
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #map { height: 100%; width: 100%; position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
     .custom-pin {
       width: 36px; height: 36px; border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg); display: flex; align-items: center; justify-content: center;
@@ -320,15 +322,28 @@ function ReportsMap({ reports = [], height = 340, onSelectReport }) {
     if (bounds.length > 1) {
       map.fitBounds(bounds, { padding: [40, 40] });
     }
+    setTimeout(function() {
+      map.invalidateSize();
+    }, 250);
+    window.addEventListener('resize', function() {
+      map.invalidateSize();
+    });
   </script>
 </body>
 </html>`;
 
     return (
-      <View style={[styles.mapContainer, { height }]}>
+      <View
+        style={[
+          styles.mapContainer,
+          isFullMap
+            ? { flex: 1, width: "100%", height: "100%", minHeight: "100%", borderRadius: 0, borderWidth: 0 }
+            : { height, width: "100%" }
+        ]}
+      >
         <iframe
           srcDoc={leafletHtml}
-          style={{ width: "100%", height: "100%", border: "none" }}
+          style={{ width: "100%", height: "100%", minHeight: "100%", border: "none", display: "block" }}
           title="Carte interactive Solid'Aid"
         />
       </View>
@@ -337,7 +352,7 @@ function ReportsMap({ reports = [], height = 340, onSelectReport }) {
 
   // Fallback mobile natif avec bouton d'ouverture Waze / Google Maps
   return (
-    <View style={[styles.mapNativeCard, { height }]}>
+    <View style={[styles.mapNativeCard, isFullMap ? { flex: 1, width: "100%", borderRadius: 0 } : { height }]}>
       <Ionicons name="map" size={44} color={colors.primary} />
       <Text style={styles.cardTitle}>Carte du secteur ({reports.length} signalements)</Text>
       <Text style={styles.bodyMuted}>Points géolocalisés en temps réel sur Paris & IDF</Text>
@@ -1275,10 +1290,10 @@ function MapScreen() {
   });
 
   return (
-    <View style={[styles.flex, { paddingBottom: 72 }]}>
+    <View style={[styles.flex, { paddingBottom: 72, minHeight: 0 }]}>
       {/* Filtres de la carte */}
       <View style={styles.mapFilterBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
           {[
             ["all", "Tous les repères"],
             ["red", "🚨 Critiques"],
@@ -1297,8 +1312,8 @@ function MapScreen() {
           ))}
         </ScrollView>
       </View>
-      <View style={{ flex: 1, width: "100%" }}>
-        <ReportsMap reports={filteredReports} height="100%" />
+      <View style={{ flex: 1, width: "100%", minHeight: 0 }}>
+        <ReportsMap reports={filteredReports} height="100%" isFull />
       </View>
     </View>
   );
@@ -1721,9 +1736,129 @@ function AdminScreen() {
    MODAL PROFIL & PARAMÈTRES (AVEC SUPPRESSION DE COMPTE)
 ───────────────────────────────────────────────────────────── */
 
-function ProfileModal({ visible, user, logout, close }) {
+function ProfileModal({ visible, user, updateUser, logout, close }) {
+  const [subTab, setSubTab] = useState("info"); // "info" | "security" | "legal"
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  // Profil & Coordonnées
+  const [email, setEmail] = useState(user.email || "");
+  const [organizationName, setOrganizationName] = useState(user.organizationName || "");
+  const [phone, setPhone] = useState(user.phone || "");
+  const [address, setAddress] = useState(user.address || "");
+  const [radiusKm, setRadiusKm] = useState(user.interventionZone?.radiusKm ? String(user.interventionZone.radiusKm) : "15");
+  const [helloAssoUrl, setHelloAssoUrl] = useState(user.helloAssoUrl || "");
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || "");
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // Sécurité & Mot de passe
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  // Réinitialiser les champs quand l'utilisateur change ou quand la modale s'ouvre
+  useEffect(() => {
+    if (visible && user) {
+      setEmail(user.email || "");
+      setOrganizationName(user.organizationName || "");
+      setPhone(user.phone || "");
+      setAddress(user.address || "");
+      setRadiusKm(user.interventionZone?.radiusKm ? String(user.interventionZone.radiusKm) : "15");
+      setHelloAssoUrl(user.helloAssoUrl || "");
+      setAvatarUrl(user.avatarUrl || "");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+  }, [visible, user]);
+
+  // Choisir un avatar depuis la galerie
+  const pickAvatar = async () => {
+    try {
+      const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!p.granted) {
+        Alert.alert("Permission requise", "Autorisez l'accès à la galerie pour modifier votre photo.");
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true
+      });
+      if (!res.canceled && res.assets?.[0]) {
+        const asset = res.assets[0];
+        const dataUri = asset.base64
+          ? `data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}`
+          : asset.uri;
+        setAvatarUrl(dataUri);
+      }
+    } catch (e) {
+      Alert.alert("Erreur", "Impossible de charger l'image.");
+    }
+  };
+
+  // Enregistrer le profil & les coordonnées
+  const handleSaveProfile = async () => {
+    if (!email.trim()) {
+      Alert.alert("Champ obligatoire", "Veuillez renseigner une adresse email valide.");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const payload = {
+        email: email.trim(),
+        organizationName: organizationName.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        avatarUrl: avatarUrl || undefined
+      };
+      if (user.role === "association") {
+        payload.radiusKm = Number(radiusKm) || 15;
+        payload.helloAssoUrl = helloAssoUrl.trim();
+      }
+      const { data } = await api.patch("/auth/profile", payload);
+      if (updateUser) {
+        await updateUser(data.user);
+      }
+      Alert.alert("Succès", "Vos coordonnées et votre profil ont été mis à jour.");
+    } catch (e) {
+      Alert.alert("Erreur de mise à jour", errorMessage(e));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // Modifier le mot de passe
+  const handleSavePassword = async () => {
+    if (!currentPassword) {
+      Alert.alert("Champ manquant", "Veuillez saisir votre mot de passe actuel.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      Alert.alert("Mot de passe trop court", "Le nouveau mot de passe doit comporter au moins 8 caractères.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Erreur", "La confirmation ne correspond pas au nouveau mot de passe.");
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      await api.patch("/auth/password", { currentPassword, newPassword });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      Alert.alert("Succès", "Votre mot de passe a été modifié avec succès.");
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   const deleteAccount = async () => {
     try {
@@ -1743,56 +1878,229 @@ function ProfileModal({ visible, user, logout, close }) {
           <Pressable onPress={close} style={styles.modalCloseBtn}>
             <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
           </Pressable>
-          <Text style={styles.modalHeaderTitle}>Mon profil & Paramètres</Text>
+          <Text style={styles.modalHeaderTitle}>Mon compte & Paramètres</Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.modalScrollBody}>
+        <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+          {/* Hero Profil avec Photo modifiable */}
           <View style={styles.profileHeroBox}>
-            <View style={styles.profileBigAvatar}>
-              <Text style={styles.profileBigAvatarText}>
-                {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
-              </Text>
+            <View style={{ position: "relative" }}>
+              <Pressable onPress={pickAvatar} style={styles.profileBigAvatar}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={{ width: 68, height: 68, borderRadius: 34 }} />
+                ) : (
+                  <Text style={styles.profileBigAvatarText}>
+                    {(organizationName || user.organizationName || email).substring(0, 2).toUpperCase()}
+                  </Text>
+                )}
+              </Pressable>
+              <Pressable
+                onPress={pickAvatar}
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  backgroundColor: colors.primary,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 2,
+                  borderColor: "#FFFFFF"
+                }}
+              >
+                <Ionicons name="camera" size={13} color="#FFFFFF" />
+              </Pressable>
             </View>
-            <Text style={styles.profileHeroName}>{user.organizationName || user.email}</Text>
+
+            <Text style={styles.profileHeroName}>{organizationName || user.organizationName || email}</Text>
             <View style={styles.zoneBadge}>
               <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
               <Text style={styles.zoneBadgeText}>
-                Compte {user.role === "association" ? "Association" : user.role === "restaurant" ? "Commerce" : user.role === "admin" ? "Admin" : "Citoyen"} actif
+                Compte {user.role === "association" ? "Association agréée" : user.role === "restaurant" ? "Commerce" : user.role === "admin" ? "Administrateur" : "Citoyen"} actif
               </Text>
             </View>
           </View>
 
-          <View style={styles.profileInfoList}>
-            <View style={styles.profileInfoRow}>
-              <Text style={styles.profileInfoLabel}>Adresse email</Text>
-              <Text style={styles.profileInfoValue}>{user.email}</Text>
-            </View>
-            {user.sirenSiret && (
-              <View style={styles.profileInfoRow}>
-                <Text style={styles.profileInfoLabel}>Numéro SIREN / SIRET</Text>
-                <Text style={styles.profileInfoValue}>{user.sirenSiret}</Text>
-              </View>
-            )}
-            {user.address && (
-              <View style={styles.profileInfoRow}>
-                <Text style={styles.profileInfoLabel}>Adresse</Text>
-                <Text style={styles.profileInfoValue}>{user.address}</Text>
-              </View>
-            )}
+          {/* Onglets de navigation dans le profil */}
+          <View style={{ flexDirection: "row", gap: 6, marginVertical: 8, backgroundColor: "#E6F4EE", padding: 4, borderRadius: 14 }}>
+            {[
+              ["info", "Coordonnées", "person-outline"],
+              ["security", "Sécurité", "lock-closed-outline"],
+              ["legal", "RGPD & Compte", "shield-outline"]
+            ].map(([id, label, icon]) => (
+              <Pressable
+                key={id}
+                onPress={() => setSubTab(id)}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  paddingVertical: 9,
+                  borderRadius: 10,
+                  backgroundColor: subTab === id ? "#FFFFFF" : "transparent",
+                  shadowColor: subTab === id ? "#000" : "transparent",
+                  shadowOpacity: subTab === id ? 0.06 : 0,
+                  shadowRadius: 4,
+                  elevation: subTab === id ? 1 : 0
+                }}
+              >
+                <Ionicons name={icon} size={15} color={subTab === id ? colors.primaryDark : colors.textMuted} />
+                <Text style={{ fontSize: 11, fontWeight: subTab === id ? "800" : "600", color: subTab === id ? colors.primaryDark : colors.textMuted }}>
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
 
-          <Pressable onPress={() => setPrivacyOpen(true)} style={styles.settingsMenuBtn}>
-            <Ionicons name="shield-outline" size={20} color={colors.primary} />
-            <Text style={styles.settingsMenuBtnText}>Politique de Confidentialité (RGPD)</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Pressable>
+          {/* ONGLET 1 : COORDONNÉES & INFOS */}
+          {subTab === "info" && (
+            <View style={{ gap: 14 }}>
+              <InputField
+                label="Adresse e-mail"
+                icon="mail-outline"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="votre.email@exemple.fr"
+                keyboardType="email-address"
+              />
 
-          <Pressable onPress={() => setDeleteConfirm(true)} style={styles.settingsMenuBtnDanger}>
-            <Ionicons name="trash-outline" size={20} color={colors.danger} />
-            <Text style={styles.settingsMenuBtnTextDanger}>Supprimer mon compte et mes données</Text>
-          </Pressable>
+              <InputField
+                label={user.role === "association" ? "Nom de l'association" : user.role === "restaurant" ? "Nom de l'établissement" : "Nom ou Pseudo"}
+                icon="person-outline"
+                value={organizationName}
+                onChangeText={setOrganizationName}
+                placeholder="Ex : Croix-Rouge Paris 10 ou Jean Dupont"
+              />
 
-          <PrimaryButton title="Déconnexion" variant="white" icon="log-out-outline" onPress={logout} style={{ marginTop: 16 }} />
+              <InputField
+                label="Numéro de téléphone"
+                icon="call-outline"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="06 12 34 56 78"
+                keyboardType="phone-pad"
+              />
+
+              <InputField
+                label="Adresse postale / Siège"
+                icon="location-outline"
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Ex : 12 rue de la Paix, 75002 Paris"
+              />
+
+              {user.role === "association" && (
+                <>
+                  <InputField
+                    label="Rayon d'action opérationnel (km)"
+                    icon="compass-outline"
+                    value={radiusKm}
+                    onChangeText={setRadiusKm}
+                    placeholder="15"
+                    keyboardType="numeric"
+                  />
+                  <InputField
+                    label="Page de dons en ligne (HelloAsso / Site)"
+                    icon="globe-outline"
+                    value={helloAssoUrl}
+                    onChangeText={setHelloAssoUrl}
+                    placeholder="https://www.helloasso.com/associations/..."
+                  />
+                </>
+              )}
+
+              {user.sirenSiret && (
+                <View style={{ backgroundColor: "#F8FAFC", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.borderLight }}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: "700" }}>Numéro SIREN / SIRET (certifié)</Text>
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: colors.primaryDark, marginTop: 2 }}>{user.sirenSiret}</Text>
+                </View>
+              )}
+
+              <PrimaryButton
+                title={savingProfile ? "Enregistrement en cours…" : "Enregistrer mes coordonnées"}
+                icon="save-outline"
+                onPress={handleSaveProfile}
+                disabled={savingProfile}
+                style={{ marginTop: 6 }}
+              />
+            </View>
+          )}
+
+          {/* ONGLET 2 : SÉCURITÉ & MOT DE PASSE */}
+          {subTab === "security" && (
+            <View style={{ gap: 14 }}>
+              <View style={{ backgroundColor: "#F0FDF4", padding: 14, borderRadius: 14, borderWidth: 1, borderColor: "#BBF7D0", gap: 4 }}>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: "#166534" }}>🔒 Changement de mot de passe</Text>
+                <Text style={{ fontSize: 11, color: "#15803D", lineHeight: 16 }}>
+                  Pour des raisons de sécurité, votre nouveau mot de passe doit comporter au moins 8 caractères.
+                </Text>
+              </View>
+
+              <InputField
+                label="Mot de passe actuel"
+                icon="key-outline"
+                secureTextEntry
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Votre mot de passe actuel"
+              />
+
+              <InputField
+                label="Nouveau mot de passe (min. 8 car.)"
+                icon="lock-closed-outline"
+                secureTextEntry
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Nouveau mot de passe"
+              />
+
+              <InputField
+                label="Confirmer le nouveau mot de passe"
+                icon="checkmark-circle-outline"
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Retapez le nouveau mot de passe"
+              />
+
+              <PrimaryButton
+                title={savingPassword ? "Modification en cours…" : "Mettre à jour mon mot de passe"}
+                icon="shield-checkmark-outline"
+                onPress={handleSavePassword}
+                disabled={savingPassword}
+                style={{ marginTop: 6 }}
+              />
+            </View>
+          )}
+
+          {/* ONGLET 3 : LÉGAL & RGPD */}
+          {subTab === "legal" && (
+            <View style={{ gap: 12 }}>
+              <Pressable onPress={() => setPrivacyOpen(true)} style={styles.settingsMenuBtn}>
+                <Ionicons name="shield-outline" size={20} color={colors.primary} />
+                <Text style={styles.settingsMenuBtnText}>Politique de Confidentialité (RGPD 2026)</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </Pressable>
+
+              <Pressable onPress={() => setDeleteConfirm(true)} style={styles.settingsMenuBtnDanger}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                <Text style={styles.settingsMenuBtnTextDanger}>Supprimer mon compte et mes données</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* Bouton de Déconnexion universel */}
+          <PrimaryButton
+            title="Déconnexion"
+            variant="white"
+            icon="log-out-outline"
+            onPress={logout}
+            style={{ marginTop: 24, marginBottom: 12 }}
+          />
         </ScrollView>
 
         {/* Confirmation Modal Suppression */}
@@ -1803,7 +2111,7 @@ function ProfileModal({ visible, user, logout, close }) {
                 <Ionicons name="alert-circle" size={44} color={colors.danger} />
                 <Text style={styles.confirmBoxTitle}>Supprimer définitivement le compte ?</Text>
                 <Text style={styles.confirmBoxText}>
-                  Cette action est irréversible. L'ensemble de vos données, informations et signalements associés seront immédiatement supprimés.
+                  Cette action est irréversible. L'ensemble de vos données, informations et signalements associés seront immédiatement supprimés conformément au RGPD.
                 </Text>
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
                   <Pressable onPress={() => setDeleteConfirm(false)} style={styles.backStepButton}>
@@ -1902,6 +2210,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 24,
     elevation: 8
+  },
+  content: {
+    flex: 1,
+    width: "100%",
+    minHeight: 0,
+    position: "relative"
   },
   scrollPage: {
     padding: 18,
@@ -2084,6 +2398,7 @@ const styles = StyleSheet.create({
 
   // Map Container
   mapContainer: {
+    width: "100%",
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
