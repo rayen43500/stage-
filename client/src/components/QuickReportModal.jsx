@@ -120,7 +120,7 @@ export function QuickReportModal({ onClose }) {
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 580, maxHeight: "90vh", overflowY: "auto" }}>
+      <div className="modal-box quick-report-modal" style={{ maxWidth: 680, maxHeight: "92vh", overflowY: "auto" }}>
         
         {step === "form" && (
           <>
@@ -148,7 +148,7 @@ export function QuickReportModal({ onClose }) {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <form onSubmit={handleSubmit} className="quick-report-form" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {/* 1. Geolocation */}
               <div style={{ background: "var(--surface-subtle)", borderRadius: "var(--radius-lg)", padding: 14, border: "1.5px solid var(--border)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -209,6 +209,7 @@ export function QuickReportModal({ onClose }) {
                   Description de la situation
                 </span>
                 <textarea
+                  className="quick-report-textarea"
                   rows={3}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
@@ -291,7 +292,7 @@ export function QuickReportModal({ onClose }) {
                 <span style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 6 }}>
                   Besoins observés
                 </span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div className="quick-report-needs" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {Object.entries(NEEDS_LABELS).map(([key, label]) => {
                     const isSelected = selectedNeeds.includes(key);
                     return (
@@ -299,6 +300,7 @@ export function QuickReportModal({ onClose }) {
                         key={key}
                         type="button"
                         onClick={() => toggleNeed(key)}
+                        className={`quick-report-need ${isSelected ? "selected" : ""}`}
                         style={{
                           padding: "6px 11px",
                           borderRadius: "var(--radius-full)",
@@ -329,14 +331,15 @@ export function QuickReportModal({ onClose }) {
                     { id: "yellow", label: "Important", desc: "Intervention rapide requise" },
                     { id: "red", label: "Critique", desc: "Urgence médicale / détresse" }
                   ].map(({ id, label, desc }) => (
-                    <div
+                    <button
                       key={id}
+                      type="button"
                       className={`urgency-option ${id} ${urgency === id ? "selected" : ""}`}
                       onClick={() => setUrgency(id)}
                     >
                       <div style={{ fontWeight: 800, fontSize: 13 }}>{label}</div>
                       <div style={{ fontSize: 10 }}>{desc}</div>
-                    </div>
+                    </button>
                   ))}
                 </div>
                 {urgency === "red" && (

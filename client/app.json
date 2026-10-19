@@ -4,9 +4,51 @@
     "slug": "sos-connect",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F7D63"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "fr.sosconnect.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SOS CONNECT utilise votre position pour orienter les signalements vers les associations locales proches.",
+        "NSCameraUsageDescription": "SOS CONNECT a besoin d'accéder à l'appareil photo pour photographier la situation à signaler.",
+        "NSPhotoLibraryUsageDescription": "SOS CONNECT accède à vos photos pour vous permettre de joindre une photo à un signalement."
+      }
+    },
+    "android": {
+      "package": "fr.sosconnect.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F7D63"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
     "plugins": [
-      ["expo-location", { "locationWhenInUsePermission": "SOS CONNECT utilise votre position pour orienter les signalements vers les associations proches." }]
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SOS CONNECT utilise votre position pour orienter les signalements vers les associations locales proches."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SOS CONNECT accède à votre galerie photo pour vous permettre de joindre une photo à un signalement.",
+          "cameraPermission": "SOS CONNECT a besoin d'accéder à l'appareil photo pour photographier la situation observée."
+        }
+      ]
     ]
   }
 }

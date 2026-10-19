@@ -1182,6 +1182,51 @@ input[type="range"] {
   justify-content: flex-end;
 }
 
+/* ─── Quick report form ─── */
+.quick-report-modal {
+  padding: 28px;
+  background: #ffffff;
+}
+
+.quick-report-form input,
+.quick-report-form textarea {
+  background: #f8fcfa;
+  border-color: #dcebe5;
+  border-radius: 12px;
+}
+
+.quick-report-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.quick-report-form input:focus,
+.quick-report-form textarea:focus {
+  border-color: var(--sos-green);
+  box-shadow: 0 0 0 3px rgba(15, 125, 99, 0.12);
+}
+
+.quick-report-textarea::placeholder {
+  color: #9bb3aa;
+  font-weight: 600;
+}
+
+.quick-report-need {
+  min-height: 36px;
+  transition: background var(--transition), border-color var(--transition), color var(--transition), transform var(--transition);
+}
+
+.quick-report-need:hover {
+  border-color: var(--border-green) !important;
+  transform: translateY(-1px);
+}
+
+.quick-report-need.selected {
+  background: #e8f7f2 !important;
+  border-color: var(--sos-green) !important;
+  color: var(--deep-green) !important;
+}
+
 /* ─── Association info chip ─── */
 .assoc-chip {
   background: var(--soft-mint);
@@ -1352,16 +1397,23 @@ input[type="range"] {
 
 .urgency-option {
   flex: 1;
-  padding: 10px;
+  padding: 12px 10px;
   border-radius: var(--radius-md);
   border: 2px solid var(--border);
   cursor: pointer;
+  background: #ffffff;
+  color: var(--text-primary);
   text-align: center;
   font-size: 12px;
   font-weight: 700;
   transition: all var(--transition);
   text-transform: uppercase;
   letter-spacing: 0.4px;
+}
+
+.urgency-option:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .urgency-option.green { border-color: #22c55e22; }
