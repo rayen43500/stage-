@@ -151,6 +151,18 @@ export function AuthPage({ initialMode = "login", onNavigate }) {
         )}
 
         <form onSubmit={handleSubmit} className="form-grid">
+          {mode === "register" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <label>
+                Prénom
+                <input name="firstName" required placeholder="Votre prénom" />
+              </label>
+              <label>
+                Nom
+                <input name="lastName" required placeholder="Votre nom" />
+              </label>
+            </div>
+          )}
           <label>
             Adresse email
             <input name="email" type="email" required placeholder="exemple@mail.com" />

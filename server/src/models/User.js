@@ -23,6 +23,8 @@ const userSchema = new mongoose.Schema(
       enum: ["active", "pending", "rejected"],
       default: "active"
     },
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
     organizationName: String,
     sirenSiret: String,
     phone: String,

@@ -4,13 +4,8 @@
     "slug": "solidaid",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/image.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/image.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "fr.solidaid.app",
@@ -24,7 +19,7 @@
       "package": "fr.solidaid.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/image.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
@@ -32,8 +27,6 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -49,6 +42,15 @@
         {
           "photosPermission": "Solid'Aid accède à votre galerie photo pour vous permettre de joindre une photo à un signalement ou un don.",
           "cameraPermission": "Solid'Aid a besoin d'accéder à l'appareil photo pour photographier la situation observée ou les denrées."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/adaptive-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
         }
       ]
     ],

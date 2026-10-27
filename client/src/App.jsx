@@ -22,7 +22,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import heroImage from "../assets/sos-link-hero.png";
-import logoImage from "../assets/image.png";
+import logoImage from "../assets/icon.png";
 
 // Palette officielle Solid'Aid
 const colors = {
@@ -640,16 +640,29 @@ function QuickReportModal({ visible, close }) {
     }
   };
 
-  const submit = async () => {
-    if (!comment.trim()) {
-      return Alert.alert("Description requise", "Décrivez brièvement la situation observée.");
+  const handleSelectCategory = (id) => {
+    setCategory(id);
+    if (id === "health") {
+      setUrgency("red");
+      Alert.alert(
+        "Urgence médicale",
+        "En cas de détresse médicale ou d'urgence vitale, composez immédiatement le 15 (SAMU) ou le 18 (Pompiers).",
+        [
+          { text: "Appeler le 15 (SAMU)", onPress: () => Linking.openURL("tel:15") },
+          { text: "Appeler le 18 (Pompiers)", onPress: () => Linking.openURL("tel:18") },
+          { text: "Continuer le signalement", style: "cancel" }
+        ]
+      );
     }
+  };
+
+  const submit = async () => {
     setBusy(true);
     try {
       await api.post("/reports/quick", {
         coordinates: coords,
         addressHint: addressHint.trim() || undefined,
-        comment: comment.trim(),
+        comment: comment.trim() || undefined,
         imageUrl: imageData || undefined,
         urgency,
         needs: [category === "social" ? "shelter" : category]
@@ -702,7 +715,7 @@ function QuickReportModal({ visible, close }) {
                   return (
                     <Pressable
                       key={c.id}
-                      onPress={() => setCategory(c.id)}
+                      onPress={() => handleSelectCategory(c.id)}
                       style={[
                         styles.categoryTile,
                         isSelected && { borderColor: c.color, backgroundColor: `${c.color}15`, borderWidth: 2 }
@@ -738,6 +751,28 @@ function QuickReportModal({ visible, close }) {
                 ))}
               </View>
 
+              {(category === "health" || urgency === "red") && (
+                <View style={styles.emergencyCallBanner}>
+                  <View style={styles.emergencyCallHeader}>
+                    <Ionicons name="warning" size={20} color="#DC2626" />
+                    <Text style={styles.emergencyCallTitle}>Urgence médicale vitale ?</Text>
+                  </View>
+                  <Text style={styles.emergencyCallText}>
+                    En cas de malaise grave ou danger immédiat, contactez directement les secours d'urgence :
+                  </Text>
+                  <View style={styles.emergencyButtonsRow}>
+                    <Pressable onPress={() => Linking.openURL("tel:15")} style={[styles.emergencyBtn, { backgroundColor: "#DC2626" }]}>
+                      <Ionicons name="call" size={16} color="#FFFFFF" />
+                      <Text style={styles.emergencyBtnText}>Appeler le 15 (SAMU)</Text>
+                    </Pressable>
+                    <Pressable onPress={() => Linking.openURL("tel:18")} style={[styles.emergencyBtn, { backgroundColor: "#B91C1C" }]}>
+                      <Ionicons name="flame" size={16} color="#FFFFFF" />
+                      <Text style={styles.emergencyBtnText}>Appeler le 18 (Pompiers)</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
               <PrimaryButton title="Suivant" onPress={() => setStep(2)} />
             </View>
           )}
@@ -745,10 +780,10 @@ function QuickReportModal({ visible, close }) {
           {step === 2 && (
             <View style={{ gap: 16 }}>
               <InputField
-                label="Description"
+                label="Description (facultative)"
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Décrivez ce que vous observez : personne seule, vêtements, couverture..."
+                placeholder="Précisez la situation si besoin : personne seule, vêtements, couverture..."
                 multiline
               />
 
@@ -844,6 +879,8 @@ function AuthScreen({ login, back }) {
   const [busy, setBusy] = useState(false);
   const [coords, setCoords] = useState(initialCoords);
   const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
     email: "",
     password: "",
     organizationName: "",
@@ -861,6 +898,9 @@ function AuthScreen({ login, back }) {
     if (!form.email || !form.password) {
       return Alert.alert("Champs requis", "Saisissez votre e-mail et mot de passe.");
     }
+    if (mode === "register" && (!form.firstName?.trim() || !form.lastName?.trim())) {
+      return Alert.alert("Nom et prénom requis", "Veuillez renseigner votre prénom et votre nom pour vous inscrire.");
+    }
     setBusy(true);
     try {
       let payload = { email: form.email, password: form.password };
@@ -869,6 +909,8 @@ function AuthScreen({ login, back }) {
           ...payload,
           role,
           consentRgpd: true,
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
           organizationName: form.organizationName || undefined,
           sirenSiret: form.sirenSiret || undefined,
           address: form.address || undefined,
@@ -940,6 +982,29 @@ function AuthScreen({ login, back }) {
                 <Text style={[styles.roleChipText, role === id && styles.roleChipTextActive]}>{title}</Text>
               </Pressable>
             ))}
+          </View>
+        </View>
+      )}
+
+      {mode === "register" && (
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <InputField
+              label="Prénom"
+              value={form.firstName}
+              onChangeText={set("firstName")}
+              placeholder="Ex. Noujoud"
+              icon="person-outline"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <InputField
+              label="Nom"
+              value={form.lastName}
+              onChangeText={set("lastName")}
+              placeholder="Ex. Hajji"
+              icon="person-outline"
+            />
           </View>
         </View>
       )}
@@ -1039,13 +1104,17 @@ function PrivateApp({ session, logout, updateUser }) {
                 <Image source={{ uri: user.avatarUrl }} style={{ width: 28, height: 28, borderRadius: 14 }} />
               ) : (
                 <Text style={styles.userAvatarText}>
-                  {(user.organizationName || user.email).substring(0, 2).toUpperCase()}
+                  {((user.firstName ? user.firstName[0] : "") + (user.lastName ? user.lastName[0] : "") || user.organizationName || user.email).substring(0, 2).toUpperCase()}
                 </Text>
               )}
             </View>
             <View>
               <Text style={styles.userNamePill} numberOfLines={1}>
-                {user.organizationName || user.email.split("@")[0]}
+                {user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.firstName
+                  ? user.firstName
+                  : user.organizationName || user.email.split("@")[0]}
               </Text>
               <Text style={styles.userRolePill}>
                 {user.role === "association" ? "Association agréée" : user.role === "restaurant" ? "Commerce" : user.role === "admin" ? "Admin" : "Citoyen"}
@@ -1058,7 +1127,13 @@ function PrivateApp({ session, logout, updateUser }) {
       {/* Vue centrale */}
       <View style={styles.content}>
         {tab === "home" && <HomeScreen user={user} goTab={setTab} openReport={() => setQuickReportOpen(true)} />}
-        {tab === "map" && <MapScreen user={user} />}
+        {tab === "map" && (
+          user.role === "citizen" ? (
+            <HomeScreen user={user} goTab={setTab} openReport={() => setQuickReportOpen(true)} />
+          ) : (
+            <MapScreen user={user} />
+          )
+        )}
         {tab === "reports" && <ReportsScreen user={user} openNew={() => setQuickReportOpen(true)} />}
         {tab === "donations" && <DonationsScreen user={user} />}
         {tab === "admin" && <AdminScreen />}
@@ -1071,10 +1146,12 @@ function PrivateApp({ session, logout, updateUser }) {
           <Text style={[styles.tabBarText, tab === "home" && styles.tabBarTextActive]}>Accueil</Text>
         </Pressable>
 
-        <Pressable onPress={() => setTab("map")} style={styles.tabBarItem}>
-          <Ionicons name={tab === "map" ? "map" : "map-outline"} size={22} color={tab === "map" ? colors.primary : colors.textMuted} />
-          <Text style={[styles.tabBarText, tab === "map" && styles.tabBarTextActive]}>Carte</Text>
-        </Pressable>
+        {user.role !== "citizen" && (
+          <Pressable onPress={() => setTab("map")} style={styles.tabBarItem}>
+            <Ionicons name={tab === "map" ? "map" : "map-outline"} size={22} color={tab === "map" ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabBarText, tab === "map" && styles.tabBarTextActive]}>Carte</Text>
+          </Pressable>
+        )}
 
         {/* Bouton central flottant (+) Signaler */}
         <Pressable onPress={() => setQuickReportOpen(true)} style={styles.centerFloatingButton}>
@@ -1148,7 +1225,11 @@ function HomeScreen({ user, goTab, openReport }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.welcomeHeroHello}>Bonjour,</Text>
           <Text style={styles.welcomeHeroName}>
-            {user.organizationName || user.email.split("@")[0]}
+            {user.firstName && user.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user.firstName
+              ? user.firstName
+              : user.organizationName || user.email.split("@")[0]}
           </Text>
           <View style={styles.zoneBadge}>
             <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
@@ -1194,16 +1275,61 @@ function HomeScreen({ user, goTab, openReport }) {
         )}
       </View>
 
-      {/* Carte en direct du secteur */}
-      <View style={styles.sectionContainer}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionHeaderTitle}>Carte des urgences en direct</Text>
-          <Pressable onPress={() => goTab("map")}>
-            <Text style={styles.seeAllLink}>Agrandir la carte →</Text>
-          </Pressable>
+      {/* Carte en direct du secteur (associations & admins) OU Numéros d'urgence (citoyens) */}
+      {user.role !== "citizen" ? (
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>Carte des urgences en direct</Text>
+            <Pressable onPress={() => goTab("map")}>
+              <Text style={styles.seeAllLink}>Agrandir la carte →</Text>
+            </Pressable>
+          </View>
+          <ReportsMap reports={reports} height={280} />
         </View>
-        <ReportsMap reports={reports} height={280} />
-      </View>
+      ) : (
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeaderTitle}>Numéros d'urgence & Secours</Text>
+          </View>
+          <View style={styles.emergencyNumGrid}>
+            <Pressable onPress={() => Linking.openURL("tel:15")} style={styles.emergencyNumCard}>
+              <View style={[styles.emergencyNumBadge, { backgroundColor: "#FEE2E2" }]}>
+                <Ionicons name="call" size={18} color="#DC2626" />
+              </View>
+              <Text style={styles.emergencyNumNumber}>15</Text>
+              <Text style={styles.emergencyNumLabel}>SAMU</Text>
+              <Text style={styles.emergencyNumDesc}>Urgence vitale</Text>
+            </Pressable>
+
+            <Pressable onPress={() => Linking.openURL("tel:18")} style={styles.emergencyNumCard}>
+              <View style={[styles.emergencyNumBadge, { backgroundColor: "#FFEDD5" }]}>
+                <Ionicons name="flame" size={18} color="#EA580C" />
+              </View>
+              <Text style={styles.emergencyNumNumber}>18</Text>
+              <Text style={styles.emergencyNumLabel}>Pompiers</Text>
+              <Text style={styles.emergencyNumDesc}>Secours & Incendie</Text>
+            </Pressable>
+
+            <Pressable onPress={() => Linking.openURL("tel:115")} style={styles.emergencyNumCard}>
+              <View style={[styles.emergencyNumBadge, { backgroundColor: "#E0E7FF" }]}>
+                <Ionicons name="home" size={18} color="#4338CA" />
+              </View>
+              <Text style={styles.emergencyNumNumber}>115</Text>
+              <Text style={styles.emergencyNumLabel}>Samu Social</Text>
+              <Text style={styles.emergencyNumDesc}>Hébergement</Text>
+            </Pressable>
+
+            <Pressable onPress={() => Linking.openURL("tel:112")} style={styles.emergencyNumCard}>
+              <View style={[styles.emergencyNumBadge, { backgroundColor: "#DCFCE7" }]}>
+                <Ionicons name="shield-checkmark" size={18} color="#15803D" />
+              </View>
+              <Text style={styles.emergencyNumNumber}>112</Text>
+              <Text style={styles.emergencyNumLabel}>Europe</Text>
+              <Text style={styles.emergencyNumDesc}>Numéro d'urgence</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* Derniers signalements prioritaires */}
       {user.role === "association" && reports.length > 0 && (
@@ -2194,7 +2320,8 @@ const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
     backgroundColor: Platform.OS === "web" ? "#EBF3EF" : colors.background,
-    alignItems: "center"
+    alignItems: "center",
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 28) : 0
   },
   mainShell: {
     flex: 1,
@@ -2467,7 +2594,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     width: "100%",
     maxWidth: 680,
-    alignSelf: "center"
+    alignSelf: "center",
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 28) : 0
   },
   modalTopNav: { flexDirection: "row", alignItems: "center", padding: 18, gap: 12, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: "#FFFFFF" },
   modalCloseBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
@@ -2763,5 +2891,98 @@ const styles = StyleSheet.create({
   emptyCardTitle: { fontSize: 16, fontWeight: "800", color: colors.primaryDark },
   legalFooterLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 16 },
   legalFooterText: { fontSize: 12, color: colors.primary, fontWeight: "800", textDecorationLine: "underline" },
-  formSectionLabel: { fontSize: 14, fontWeight: "900", color: colors.primaryDark }
+  formSectionLabel: { fontSize: 14, fontWeight: "900", color: colors.primaryDark },
+
+  // Emergency Call Banner (Urgence médicale / 15 & 18)
+  emergencyCallBanner: {
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1.5,
+    borderColor: "#FCA5A5",
+    borderRadius: 16,
+    padding: 14,
+    gap: 8
+  },
+  emergencyCallHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  emergencyCallTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#991B1B"
+  },
+  emergencyCallText: {
+    fontSize: 12,
+    color: "#7F1D1D",
+    lineHeight: 17
+  },
+  emergencyButtonsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4
+  },
+  emergencyBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12
+  },
+  emergencyBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+
+  // Emergency Numbers Grid (Espace Citoyen)
+  emergencyNumGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between"
+  },
+  emergencyNumCard: {
+    flexGrow: 1,
+    flexBasis: "46%",
+    minWidth: 120,
+    maxWidth: "49%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    gap: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1
+  },
+  emergencyNumBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 2
+  },
+  emergencyNumNumber: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: colors.primaryDark
+  },
+  emergencyNumLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.textPrimary
+  },
+  emergencyNumDesc: {
+    fontSize: 10,
+    color: colors.textMuted,
+    textAlign: "center"
+  }
 });

@@ -13,6 +13,10 @@ const registerSchema = z.object({
   password: z.string().min(8),
   role: z.enum(["citizen", "association", "restaurant"]).default("citizen"),
   consentRgpd: z.literal(true),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  prenom: z.string().optional(),
+  nom: z.string().optional(),
   organizationName: z.string().optional(),
   sirenSiret: z.string().optional(),
   phone: z.string().optional(),
@@ -46,8 +50,13 @@ router.post("/register", async (req, res) => {
     };
   }
 
+  const firstName = data.firstName || data.prenom || undefined;
+  const lastName = data.lastName || data.nom || undefined;
+
   const user = await User.create({
     ...data,
+    firstName,
+    lastName,
     passwordHash,
     status,
     interventionZone
@@ -55,10 +64,11 @@ router.post("/register", async (req, res) => {
 
   // Send welcome/pending notification email
   if (data.role === "citizen") {
+    const greeting = firstName ? `${firstName} ${lastName || ""}`.trim() : "";
     await sendMail({
       to: data.email,
       subject: "Bienvenue sur SOS Link",
-      text: `Bonjour,\n\nVotre compte citoyen SOS Link a ete cree avec succes. Vous pouvez maintenant signaler des personnes en difficulte en Ile-de-France.\n\nMerci pour votre engagement solidaire.\n\nL'equipe SOS Link`
+      text: `Bonjour${greeting ? " " + greeting : ""},\n\nVotre compte citoyen SOS Link a ete cree avec succes. Vous pouvez maintenant signaler des personnes en difficulte en Ile-de-France.\n\nMerci pour votre engagement solidaire.\n\nL'equipe SOS Link`
     }).catch(() => {});
   } else {
     await sendMail({
