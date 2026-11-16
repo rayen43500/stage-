@@ -5,7 +5,11 @@ export async function auth(req, res, next) {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "Authentification requise." });
-    const payload = jwt.verify(token, process.env.JWT_SECRET || "fallback-secret-key-12345");
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) {
+      return res.status(503).json({ message: "Service d'authentification indisponible." });
+    }
+    const payload = jwt.verify(token, secret);
     const user = await User.findById(payload.sub).select("-passwordHash");
     if (!user || user.deletedAt) return res.status(401).json({ message: "Compte introuvable." });
     req.user = user;

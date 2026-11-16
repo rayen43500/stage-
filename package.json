@@ -8,7 +8,11 @@
     "export:android": "npm run export --prefix client",
     "build:android": "npm run build:android --prefix client",
     "seed:admin": "npm run seed:admin --prefix server",
-    "seed:data": "npm run seed:data --prefix server"
+    "seed:data": "npm run seed:data --prefix server",
+    "seeddata": "npm run seed:data --prefix server",
+    "seed-data": "npm run seed:data --prefix server",
+    "seed": "npm run seed:data --prefix server",
+    "seedadmin": "npm run seed:admin --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"

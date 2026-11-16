@@ -11,10 +11,21 @@ const reportSchema = new mongoose.Schema(
     status: { type: String, enum: ["new", "in_progress", "resolved", "removed"], default: "new" },
     pendingStatus: {
       status: { type: String, enum: ["new", "in_progress", "resolved", "removed"] },
+      requestStatus: { type: String, enum: ["pending"], default: "pending" },
       requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       requestedAt: { type: Date },
       note: { type: String }
     },
+    statusChangeHistory: [{
+      proposedStatus: { type: String, enum: ["new", "in_progress", "resolved", "removed"] },
+      requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      requestedAt: Date,
+      note: String,
+      decision: { type: String, enum: ["approved", "rejected"] },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reviewedAt: Date,
+      rejectionReason: String
+    }],
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: { type: [Number], required: true }
@@ -50,4 +61,3 @@ reportSchema.index({ assignedAssociations: 1, status: 1 });
 reportSchema.index({ "pendingStatus.status": 1 });
 
 export const Report = mongoose.model("Report", reportSchema);
-

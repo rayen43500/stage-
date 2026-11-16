@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { BlogPost } from "../models/BlogPost.js";
 import { auth, requireRole } from "../middleware/auth.js";
 
@@ -18,7 +19,7 @@ router.get("/", async (req, res) => {
 // GET /api/blog/:id — Get a single blog post
 router.get("/:id", async (req, res) => {
   try {
-    const post = await BlogPost.findById(req.params.id);
+    const post = await BlogPost.findOne({ _id: req.params.id, isPublished: true });
     if (!post) return res.status(404).json({ message: "Article non trouvé." });
     res.json(post);
   } catch (error) {
@@ -60,6 +61,21 @@ router.delete("/:id", auth, requireRole("admin"), async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Erreur lors de la suppression de l'article." });
   }
+});
+
+router.patch("/:id", auth, requireRole("admin"), async (req, res) => {
+  const data = z.object({
+    title: z.string().trim().min(1).optional(),
+    summary: z.string().trim().min(1).optional(),
+    content: z.string().trim().min(1).optional(),
+    imageUrl: z.string().url().optional(),
+    category: z.string().trim().min(1).optional(),
+    author: z.string().trim().min(1).optional(),
+    isPublished: z.boolean().optional()
+  }).parse(req.body);
+  const post = await BlogPost.findByIdAndUpdate(req.params.id, { $set: data }, { new: true, runValidators: true });
+  if (!post) return res.status(404).json({ message: "Article introuvable." });
+  res.json(post);
 });
 
 export default router;

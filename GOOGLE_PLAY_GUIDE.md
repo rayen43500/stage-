@@ -1,111 +1,58 @@
-# Guide de Déploiement & Mise en Production — Google Play Console
-## Application : SOS CONNECT (Package : `fr.sosconnect.app`)
+# Préparation Google Play — Solid'Aid
 
-Ce guide récapitule toutes les exigences et la conformité aux normes strictes de **Google Play Console (2024 / 2026)** pour la mise en production de l'application **SOS CONNECT**.
+Ce document décrit la configuration présente dans le dépôt. Il ne prouve pas le contenu du binaire final, l'état du compte Play Console, les services de production ou l'approbation de Google. Toute déclaration Console doit être vérifiée à partir de la version effectivement compilée et des prestataires réellement utilisés.
 
----
+## Configuration Android observée
 
-## 1. Synthèse de Conformité Google Play
+- Package configuré : `fr.solidaid.app`.
+- Version : `1.0.0`, `versionCode: 3` (à incrémenter si la Console indique un code égal ou supérieur).
+- Target API configurée : 36.
+- Profil EAS production : AAB (`app-bundle`).
+- Permissions prévues : localisation approximative/précise au premier plan et caméra. Les permissions médias générales et enregistrement audio sont bloquées/supprimées ; les sélections d'images utilisent le picker système.
+- Le dépôt ne contient pas de résultat de build signé. Vérifier dans l'AAB la cible SDK, le manifeste fusionné, la signature, le package et Play App Signing avant téléversement.
 
-| Exigence Google Play | Statut SOS CONNECT | Détail d'implémentation |
-| :--- | :---: | :--- |
-| **Format du binaire** | Conforme | Android App Bundle (**`.aab`**) via EAS Build (`eas.json`). |
-| **Niveau d'API cible (Target SDK)** | Conforme | Expo SDK 54 cible **Android 15 (API 35)** (exigence minimale Google : API 34+). |
-| **Architecture 64 bits** | Conforme | Hermes Bytecode et binaires React Native 64-bit (`arm64-v8a`, `x86_64`). |
-| **Package ID unique** | Conforme | `fr.sosconnect.app` configuré dans `client/app.json`. |
-| **Version & VersionCode** | Conforme | `version: "1.0.0"`, `versionCode: 1` configurés. |
-| **Icônes adaptatives Android** | Conforme | `adaptive-icon.png` (premier plan) avec fond vert émeraude `#0F7D63` dans `client/assets/`. |
-| **Écran de démarrage (Splash)** | Conforme | `splash.png` configuré dans `client/assets/` et `app.json`. |
-| **Politique de confidentialité (RGPD)** | Conforme | Accessible dans l'application via un modal et en ligne sur `/privacy-policy`. |
-| **Suppression du compte (Règle Google)** | Conforme | Accessible directement dans l'app (profil) et via URL web publique `/delete-account`. |
-| **Permissions justifiées** | Conforme | Déclarées avec descriptions précises en français (`expo-location`, `expo-image-picker`). |
-| **Aucun tracking arrière-plan** | Conforme | Aucune demande de permission `ACCESS_BACKGROUND_LOCATION`. |
+## Déclarations Play Console à effectuer
 
----
+1. **Data Safety** : inventorier l'ensemble des données ci-dessous et les SDK/prestataires réellement actifs. Le code traite e-mail, identifiants de connexion, identité/profil, téléphone/adresse/SIREN, localisation, photos, signalements/commentaires, informations de dons, activité et journaux d'audit. Vérifier les finalités, partages, chiffrement et rétention auprès de l'exploitant et des prestataires.
+2. **Suppression de compte** : renseigner la page publique `/delete-account`. Le formulaire envoie un lien à usage unique valable une heure ; la confirmation supprime le compte, les signalements et dons associés. Des journaux d'audit sans acteur et les sauvegardes jusqu'à leur expiration peuvent subsister.
+3. **Ads** : aucun SDK publicitaire n'est déclaré dans les dépendances mobiles actuellement observées. Confirmer aussi les services externes et contenus sponsorisés avant de répondre.
+4. **Health Apps** : compléter la déclaration même si aucune fonction médicale n'est déclarée. Le code comprend une catégorie « urgence médicale », des besoins de soins et des appels aux numéros d'urgence ; il ne faut pas déclarer du diagnostic ou du suivi médical sans fonction correspondante.
+5. **Financial Features** : compléter la déclaration pour l'app. Le dépôt expose des liens HelloAsso et une estimation de dons alimentaires, mais pas de portefeuille ni de paiement in-app identifiés. Confirmer les services réellement promus.
+6. **Public cible** : sélectionner les âges réellement visés ; le dépôt ne montre pas de fonction explicitement destinée aux enfants.
+7. **Classification du contenu** : remplir le questionnaire IARC selon les textes, photos et contenus effectivement accessibles.
+8. **Accès de l'examinateur** : fournir des identifiants de démonstration non privilégiés et les instructions pour citoyen, association et commerce si l'accès est restreint. Ne jamais communiquer de comptes d'administration personnels.
+9. **Permissions** : le manifeste final doit être inspecté. Justifier seulement la localisation au premier plan et la caméra si requises ; le Photo Picker doit suffire pour les photos choisies.
 
-## 2. Visuels et Assets pour la fiche Play Store
+## Fiche Play et assets
 
-Les fichiers nécessaires pour la fiche du magasin sont disponibles dans [client/assets/](file:///c:/Users/AXELL/Desktop/stage/client/assets/) :
+- Icône source : `client/assets/icon.png` (1024×1024). Préparer l'asset Play conforme selon l'interface Console.
+- Feature graphic : `client/assets/play-store-feature-graphic.jpg` (1024×500).
+- Captures d'écran téléphone : à capturer depuis une build réelle après validation fonctionnelle ; aucune capture de l'application réelle n'est fournie ici.
+- URL de confidentialité : `https://<domaine-de-production>/privacy-policy`.
+- URL de suppression : `https://<domaine-de-production>/delete-account`.
+- Description courte proposée : « Signalez un besoin, trouvez des associations proches et suivez les actions solidaires locales. »
+- Description complète proposée : « Solid'Aid met en relation citoyens, associations et commerces solidaires. Les citoyens peuvent transmettre un signalement avec localisation et besoins observés, puis suivre sa prise en charge. Les associations consultent les signalements qui leur sont affectés. Les commerces peuvent déclarer des invendus alimentaires disponibles pour des associations. La localisation et les photos sont facultatives et utilisées lors des actions choisies. Solid'Aid ne remplace pas les services d'urgence. En cas de danger immédiat, contactez les services d'urgence de votre pays. »
 
-- **Icône de l'application (512x512)** : [client/assets/icon.png](file:///c:/Users/AXELL/Desktop/stage/client/assets/icon.png)
-- **Icône adaptative Android** : [client/assets/adaptive-icon.png](file:///c:/Users/AXELL/Desktop/stage/client/assets/adaptive-icon.png)
-- **Graphique de fonctionnalité / Bannière Play Store (1024x500)** : [client/assets/play-store-banner.jpg](file:///c:/Users/AXELL/Desktop/stage/client/assets/play-store-banner.jpg)
-- **Écran de chargement (Splash)** : [client/assets/splash.png](file:///c:/Users/AXELL/Desktop/stage/client/assets/splash.png)
+## Build
 
----
+Depuis `client` : `npx eas build --platform android --profile production`. Vérifier que le versionCode est supérieur au dernier publié, que le target SDK du manifeste est 36 ou plus, que l'AAB est signé et que Play App Signing est activé. L'envoi en Console et la soumission à l'examen sont des étapes manuelles nécessitant l'accès au compte éditeur.
 
-## 3. URLs Obligatoires pour la Console Google Play
+## Configuration serveur obligatoire
 
-Lors de la configuration de votre fiche Google Play, vous devez renseigner deux URLs obligatoires servies directement par votre backend :
+- `JWT_SECRET` : secret aléatoire d'au moins 32 caractères ; le serveur refuse de démarrer sans lui.
+- `MONGODB_URI` : base de production.
+- `CORS_ORIGINS` : origines Web autorisées, séparées par des virgules ; les clients mobiles sans Origin restent autorisés.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` : nécessaire à l'envoi des liens de confirmation Web.
+- `PUBLIC_BASE_URL` : URL HTTPS publique du backend, sans slash final.
+- Confirmer avec l'hébergeur les régions, sauvegardes, durées de rétention et sous-traitants afin de finaliser la politique et Data Safety.
 
-1. **URL de la politique de confidentialité :**
-   `https://[votre-domaine-en-production]/privacy-policy`
-   *(ou `https://[votre-domaine-en-production]/api/legal/privacy`)*
+## Checklist avant soumission
 
-2. **URL de demande de suppression du compte et des données :**
-   `https://[votre-domaine-en-production]/delete-account`
-   *(Obligatoire depuis la mise à jour Google Play sur la gestion des comptes utilisateurs)*
-
----
-
-## 4. Fiche « Sécurité des Données » (Data Safety) Google Play
-
-Voici les réponses exactes à cocher lors du remplissage du questionnaire Google Play :
-
-### A. Collecte et partage des données
-- **Votre application collecte-t-elle ou partage-t-elle des types de données utilisateur ?**  
-  👉 **Oui**
-- **Toutes les données utilisateur collectées par votre application sont-elles chiffrées en transit ?**  
-  👉 **Oui** (via HTTPS / TLS)
-- **Fournissez-vous un moyen pour les utilisateurs de demander la suppression de leurs données ?**  
-  👉 **Oui** (dans l'application et via l'URL web `/delete-account`)
-
-### B. Types de données collectées
-1. **Localisation :**
-   - *Position approximative* : Oui
-   - *Position précise* : Oui
-   - *Finalité* : Fonctionnalité de l'application (situer les signalements et orienter les équipes vers les personnes en difficulté).
-   - *Partage* : Partagé avec des tiers (uniquement les associations humanitaires habilitées).
-   - *Éphémère ?* : Non.
-
-2. **Informations personnelles :**
-   - *Adresse e-mail* : Oui (gestion de compte, authentification, notifications).
-   - *Nom ou Nom de la structure* : Oui (associations et commerçants).
-   - *Numéro de téléphone* : Facultatif (pour coordination terrain des associations).
-
-3. **Photos et vidéos :**
-   - *Photos* : Oui (facultatif, uniquement si l'utilisateur prend ou joint une photo pour illustrer un signalement ou un don d'invendus).
-
----
-
-## 5. Comment générer le fichier de production `.aab`
-
-### Prérequis
-Installer EAS CLI si ce n'est pas déjà fait :
-```bash
-npm install -g eas-cli
-```
-
-### Connexion à votre compte Expo
-```bash
-eas login
-```
-
-### Lancer la compilation de production
-Rendez-vous dans le dossier `client` ou exécutez depuis la racine :
-```bash
-npm run build:android
-```
-*(ou `cd client && eas build --platform android --profile production`)*
-
-Le service EAS génère automatiquement un fichier **`.aab`** signé, prêt à être téléchargé et uploadé dans la console Google Play sous :
-**Google Play Console > Production > Créer une version**.
-
----
-
-## 6. Variables d'environnement en production
-
-Avant le build final de production, assurez-vous que `EXPO_PUBLIC_API_URL` dans [client/.env](file:///c:/Users/AXELL/Desktop/stage/client/.env) pointe vers votre domaine sécurisé HTTPS :
-```env
-EXPO_PUBLIC_API_URL=https://api.votre-domaine.fr/api
-```
+- [ ] Déployer et vérifier les variables serveur requises, SMTP, HTTPS, CORS et base de production.
+- [ ] Tester la suppression in-app et le lien Web de bout en bout avec un compte de test, y compris les données associées.
+- [ ] Créer des comptes de démonstration pour l'examen.
+- [ ] Construire l'AAB, contrôler le manifeste, le target API, la signature et le versionCode.
+- [ ] Compléter Data Safety, Ads, Health Apps, Financial Features, public cible, IARC et App Access dans Play Console.
+- [ ] Vérifier les URLs légales depuis un réseau public.
+- [ ] Capturer et ajouter des captures d'écran de la build finale.
+- [ ] Importer en test interne, vérifier les parcours réels et ensuite envoyer la version à l'examen.

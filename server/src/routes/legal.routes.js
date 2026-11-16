@@ -1,146 +1,87 @@
 import { Router } from "express";
+import crypto from "node:crypto";
+import { z } from "zod";
+import { AccountDeletionRequest } from "../models/AccountDeletionRequest.js";
+import { User } from "../models/User.js";
+import { sendMail } from "../services/mailer.js";
+import { permanentlyDeleteAccount } from "./auth.routes.js";
 
 const router = Router();
+const deletionRequestWindows = new Map();
 
 router.get("/privacy", (req, res) => {
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Politique de Confidentialité — Solid'Aid</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
-    .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 36px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-    h1 { color: #0f766e; border-bottom: 2px solid #ccfbf1; padding-bottom: 12px; margin-top: 0; }
-    h2 { color: #134e4a; margin-top: 28px; }
-    p, li { color: #334155; }
-    .badge { display: inline-block; background: #ccfbf1; color: #0f766e; font-weight: 600; padding: 4px 10px; border-radius: 999px; font-size: 13px; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #64748b; }
-    a { color: #0f766e; text-decoration: none; font-weight: 600; }
-    a:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <span class="badge">Conformité Google Play & RGPD</span>
-    <h1>Politique de Confidentialité — Solid'Aid</h1>
-    <p><em>Dernière mise à jour : 19 octobre 2026</em></p>
-
-    <p>L'application <strong>Solid'Aid</strong> est une plateforme solidaire dédiée à la coordination citoyenne, humanitaire et à la lutte contre le gaspillage alimentaire. Nous accordons une importance primordiale au respect de votre vie privée et à la protection de vos données personnelles.</p>
-
-    <h2>1. Données collectées et finalités</h2>
-    <ul>
-      <li><strong>Géolocalisation (coordonnées GPS précises et approximatives) :</strong> Utilisée uniquement avec votre consentement explicite lors de la création d'un signalement ou pour définir la zone d'intervention des associations. Aucune localisation n'est collectée en arrière-plan (pas de background tracking).</li>
-      <li><strong>Appareil photo et Photos (facultatif) :</strong> Utilisé uniquement si vous choisissez d'illustrer un signalement citoyen ou une déclaration d'invendus alimentaires par une photo.</li>
-      <li><strong>Informations de compte :</strong> Adresse email, mot de passe chiffré (bcrypt), nom de structure ou statut (citoyen, association, commerce solidaire).</li>
-      <li><strong>Données de signalement :</strong> Catégorie de besoin (alimentation, hébergement, soins, etc.), repères géographiques et commentaires.</li>
-    </ul>
-
-    <h2>2. Base légale et partage des données</h2>
-    <p>Les données sont collectées sur la base de votre consentement explicite et pour l'exécution d'une mission d'intérêt solidaire. <strong>Aucune donnée n'est commercialisée, ni cédée à des fins publicitaires ou de profilage.</strong></p>
-    <p>Les signalements sont uniquement transmis aux associations et acteurs humanitaires habilités et vérifiés intervenant dans le secteur géographique concerné.</p>
-
-    <h2>3. Sécurité et conservation</h2>
-    <p>Toutes les communications entre l'application mobile et nos serveurs sont sécurisées et chiffrées via les protocoles TLS/HTTPS. Les mots de passe sont hachés de manière irréversible. Les données de signalements résolus ou périmés sont automatiquement archivées ou supprimées.</p>
-
-    <h2>4. Vos droits RGPD et suppression des données</h2>
-    <p>Conformément au Règlement Général sur la Protection des Données (RGPD) et aux exigences du Google Play Store, vous disposez d'un droit d'accès, de rectification et de <strong>suppression totale de vos données</strong>.</p>
-    <ul>
-      <li><strong>Directement dans l'application :</strong> Les utilisateurs peuvent supprimer leur compte et leurs données associées en un clic depuis leur profil via le bouton « Supprimer mon compte ».</li>
-      <li><strong>Par demande web :</strong> Vous pouvez également demander la suppression de votre compte et de toutes vos données sans installer l'application sur notre page dédiée : <a href="/delete-account">Demande de suppression de compte</a> ou par email à <a href="mailto:contact@soslink.fr">contact@soslink.fr</a>.</li>
-    </ul>
-
-    <h2>5. Contact du responsable de traitement</h2>
-    <p>Pour toute question relative à cette politique ou pour exercer vos droits :<br>
-    <strong>Email :</strong> <a href="mailto:contact@soslink.fr">contact@soslink.fr</a><br>
-    <strong>Équipe Solid'Aid</strong>
-    </p>
-
-    <div class="footer">
-      <p>© 2026 Solid'Aid. Tous droits réservés.</p>
-    </div>
-  </div>
-</body>
-</html>`);
+  res.type("html").send(`<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Politique de confidentialité — Solid'Aid</title><style>body{font:16px/1.65 system-ui,sans-serif;color:#1e293b;background:#f8fafc;margin:0;padding:24px}.container{max-width:800px;margin:auto;background:white;padding:32px;border-radius:12px}h1,h2{color:#0f766e}a{color:#0f766e}</style></head><body><main class="container">
+<h1>Politique de confidentialité — Solid'Aid</h1><p>Dernière mise à jour : 16 novembre 2026.</p>
+<p>Cette politique décrit les données traitées par l'application Solid'Aid, service de signalement solidaire et de mise en relation de citoyens, associations et commerces.</p>
+<h2>Données traitées</h2><ul><li>Compte : adresse e-mail, mot de passe haché avec bcrypt, prénom, nom, téléphone, adresse, nom et identifiant de structure, avatar et rôle.</li><li>Localisation : coordonnées précises d'un signalement et position/zone d'intervention fournie pour l'affectation géographique. L'app ne demande pas de localisation en arrière-plan.</li><li>Signalements : besoins, urgence, commentaires, photos facultatives, adresse/repère et caractéristiques estimées des personnes décrites (tranche d'âge, genre apparent, taille de groupe, besoins observés).</li><li>Dons alimentaires : description, quantité, photo facultative, date et créneaux de retrait, association affectée et valorisation estimative.</li><li>Journaux : événements techniques et d'audit des actions administratives.</li></ul>
+<h2>Utilisation et partage</h2><p>Les données servent à fournir le service, affecter les signalements et dons aux associations concernées, assurer la sécurité et administrer les comptes. Les informations de contact nécessaires à la coordination peuvent être communiquées à l'association affectée. Les e-mails transactionnels sont envoyés par le service SMTP configuré par l'exploitant. Les données sont hébergées par les prestataires configurés pour l'API et la base MongoDB ; l'exploitant doit tenir à jour la liste de ces prestataires et leurs lieux de traitement. Aucune régie publicitaire n'est intégrée dans le code examiné.</p>
+<h2>Protection et conservation</h2><p>Les mots de passe sont hachés avec bcrypt. L'application cliente utilise HTTPS pour l'API de production configurée. Les signalements et dons sont conservés tant qu'ils sont nécessaires au fonctionnement du service ou jusqu'à une demande de suppression applicable. Les journaux d'audit de sécurité peuvent être conservés sous forme anonymisée. Les copies de sauvegarde peuvent persister jusqu'à la fin du cycle de rétention du prestataire. Les durées exactes des sauvegardes et journaux doivent être confirmées par l'exploitant.</p>
+<h2>Suppression et droits</h2><p>La suppression peut être initiée dans les paramètres du compte ou depuis la page Web <a href="/delete-account">Suppression de compte Solid'Aid</a>. La demande Web requiert une confirmation par e-mail. La suppression efface le compte, ses signalements et les dons qui lui sont liés ; les journaux d'audit conservés sont dissociés de l'identifiant du compte. Pour exercer vos droits ou poser une question : <a href="mailto:contact@soslink.fr">contact@soslink.fr</a>.</p>
+<h2>Responsable et contact</h2><p>Équipe Solid'Aid — <a href="mailto:contact@soslink.fr">contact@soslink.fr</a>. L'entité juridique responsable doit être précisée dans cette politique et dans la fiche Google Play par l'éditeur avant publication.</p>
+</main></body></html>`);
 });
 
 router.get("/delete-account", (req, res) => {
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Suppression de compte — Solid'Aid</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; margin: 0; padding: 24px; }
-    .container { max-width: 650px; margin: 0 auto; background: #fff; padding: 36px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-    h1 { color: #b91c1c; border-bottom: 2px solid #fee2e2; padding-bottom: 12px; margin-top: 0; }
-    p, li { color: #334155; }
-    .box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 20px 0; }
-    label { display: block; font-weight: 600; margin-top: 14px; margin-bottom: 6px; font-size: 14px; }
-    input[type="email"], textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
-    button { background: #dc2626; color: #fff; font-weight: 700; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; margin-top: 18px; font-size: 15px; }
-    button:hover { background: #b91c1c; }
-    .footer { margin-top: 30px; font-size: 13px; color: #64748b; }
-    a { color: #0f766e; text-decoration: none; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Demande de suppression de compte & données</h1>
-    <p>Conformément aux règles de Google Play et au RGPD, vous pouvez demander à tout moment la suppression intégrale de votre compte <strong>Solid'Aid</strong> et de l'ensemble des données associées.</p>
-
-    <div class="box">
-      <strong>Ce qui sera définitivement supprimé :</strong>
-      <ul>
-        <li>Votre compte utilisateur et vos identifiants d'accès</li>
-        <li>Vos coordonnées personnelles (email, téléphone, adresse)</li>
-        <li>L'ensemble des signalements que vous avez créés</li>
-        <li>Les historiques de dons et interactions associées</li>
-      </ul>
-      <p style="margin: 0; font-size: 13px; color: #7f1d1d;">Cette action est définitive et irréversible.</p>
-    </div>
-
-    <form method="POST" action="/api/legal/delete-account-request" onsubmit="alert('Votre demande de suppression a bien été prise en compte. Un email de confirmation vous sera envoyé sous 48h ouvrées.'); return true;">
-      <label for="email">Adresse email associée au compte :</label>
-      <input type="email" id="email" name="email" required placeholder="nom@exemple.com">
-
-      <label for="reason">Raison de la suppression (facultatif) :</label>
-      <textarea id="reason" name="reason" rows="3" placeholder="Facultatif..."></textarea>
-
-      <button type="submit">Confirmer la demande de suppression</button>
-    </form>
-
-    <div class="footer">
-      <p>Vous pouvez également nous contacter directement par email à <a href="mailto:contact@soslink.fr">contact@soslink.fr</a>.</p>
-      <p><a href="/privacy-policy">Consulter la Politique de Confidentialité</a></p>
-    </div>
-  </div>
-</body>
-</html>`);
+  res.type("html").send(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suppression de compte — Solid'Aid</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:680px;margin:40px auto;padding:20px;color:#1e293b}label,input,button{display:block;width:100%;box-sizing:border-box;margin:12px 0;padding:12px}button{background:#b91c1c;color:white;border:0;border-radius:6px;font-weight:700}</style></head><body><h1>Suppression de compte Solid'Aid</h1><p>Indiquez l'adresse e-mail du compte. Si un compte correspondant existe, nous enverrons un lien de confirmation valable une heure. La confirmation supprime le compte, ses signalements et ses dons associés. Les journaux de sécurité peuvent être conservés sous forme anonymisée et les sauvegardes jusqu'à leur expiration.</p><form method="post" action="/api/legal/delete-account-request"><label for="email">Adresse e-mail du compte</label><input id="email" type="email" name="email" required maxlength="254" autocomplete="email"><button type="submit">Envoyer le lien de confirmation</button></form><p><a href="/privacy-policy">Politique de confidentialité</a> · <a href="mailto:contact@soslink.fr">Contacter Solid'Aid</a></p></body></html>`);
 });
 
-router.post("/delete-account-request", (req, res) => {
-  // Acknowledge the deletion request
-  const email = req.body?.email;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <title>Demande enregistrée</title>
-  <style>body { font-family: sans-serif; text-align: center; padding: 50px; background: #f8fafc; }</style>
-</head>
-<body>
-  <h2 style="color: #0f766e;">Demande bien reçue</h2>
-  <p>Votre demande de suppression pour l'adresse <strong>${email || "indiquée"}</strong> a été enregistrée.</p>
-  <p>Les données associées seront supprimées sous 48h ouvrées conformément au RGPD.</p>
-  <a href="/privacy-policy" style="color: #0f766e;">Retour à la politique de confidentialité</a>
-</body>
-</html>`);
+router.post("/delete-account-request", async (req, res, next) => {
+  try {
+    const now = Date.now();
+    const window = deletionRequestWindows.get(req.ip);
+    if (window && now - window.startedAt < 15 * 60 * 1000 && window.count >= 5) {
+      return res.status(429).send("Trop de demandes. Réessayez plus tard.");
+    }
+    if (!window || now - window.startedAt >= 15 * 60 * 1000) {
+      deletionRequestWindows.set(req.ip, { startedAt: now, count: 1 });
+    } else {
+      window.count += 1;
+    }
+    const { email } = z.object({ email: z.string().email().max(254) }).parse(req.body);
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail, deletedAt: { $exists: false }, role: { $ne: "admin" } });
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      await AccountDeletionRequest.create({
+        email: normalizedEmail,
+        tokenHash: crypto.createHash("sha256").update(rawToken).digest("hex"),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+      });
+      const baseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+      await sendMail({
+        to: normalizedEmail,
+        subject: "Confirmez la suppression de votre compte Solid'Aid",
+        text: `Pour confirmer la suppression de votre compte et de ses données, ouvrez ce lien dans l'heure : ${baseUrl}/delete-account/confirm?token=${rawToken}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message.`
+      });
+    }
+    res.type("html").send("<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Solid'Aid — Suppression</title><h1>Vérifiez votre messagerie</h1><p>Si un compte correspond à cette adresse, un lien de confirmation valable une heure a été envoyé.</p><a href=\"/privacy-policy\">Politique de confidentialité</a></html>");
+  } catch (error) { next(error); }
+});
+
+router.get("/delete-account/confirm", async (req, res, next) => {
+  try {
+    const parsed = z.string().regex(/^[a-f0-9]{64}$/).safeParse(req.query.token);
+    if (!parsed.success) return res.status(400).send("Lien de confirmation invalide ou expiré.");
+    const tokenHash = crypto.createHash("sha256").update(parsed.data).digest("hex");
+    const request = await AccountDeletionRequest.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+    if (!request) return res.status(400).send("Lien de confirmation invalide ou expiré.");
+    res.type("html").send(`<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solid'Aid — Confirmation</title><h1>Confirmer la suppression</h1><p>Cette action supprimera votre compte, vos signalements et les dons associés.</p><form method="post" action="/api/legal/delete-account/confirm"><input type="hidden" name="token" value="${parsed.data}"><button type="submit">Supprimer définitivement mon compte</button></form></html>`);
+  } catch (error) { next(error); }
+});
+
+router.post("/delete-account/confirm", async (req, res, next) => {
+  try {
+    const parsed = z.string().regex(/^[a-f0-9]{64}$/).safeParse(req.body?.token);
+    if (!parsed.success) return res.status(400).send("Lien de confirmation invalide ou expiré.");
+    const tokenHash = crypto.createHash("sha256").update(parsed.data).digest("hex");
+    const request = await AccountDeletionRequest.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+    if (!request) return res.status(400).send("Lien de confirmation invalide ou expiré.");
+    const user = await User.findOne({ email: request.email, deletedAt: { $exists: false }, role: { $ne: "admin" } });
+    if (user) await permanentlyDeleteAccount(user._id);
+    await AccountDeletionRequest.deleteMany({ email: request.email });
+    res.type("html").send("<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Solid'Aid — Suppression</title><h1>Compte supprimé</h1><p>Le compte et les données qui lui sont associées ont été supprimés.</p></html>");
+  } catch (error) { next(error); }
 });
 
 export default router;

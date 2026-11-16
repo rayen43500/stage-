@@ -89,13 +89,29 @@ export function AdminPage() {
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
 function DashboardTab({ dashboard, pendingOrgs, pendingReports, onChanged }) {
   async function setOrgStatus(id, status) {
-    await api.patch(`/admin/organizations/${id}/status`, { status });
-    onChanged();
+    const rejectionReason = status === "rejected"
+      ? window.prompt("Motif obligatoire du refus :")
+      : undefined;
+    if (status === "rejected" && !rejectionReason?.trim()) return;
+    try {
+      await api.patch(`/admin/organizations/${id}/status`, { status, rejectionReason });
+      onChanged();
+    } catch (error) {
+      window.alert(error.response?.data?.message || "Impossible de modifier le statut.");
+    }
   }
 
   async function handleConfirmReportStatus(reportId, action) {
-    await api.patch(`/reports/${reportId}/confirm-status`, { action });
-    onChanged();
+    const rejectionReason = action === "reject"
+      ? window.prompt("Motif obligatoire du rejet :")
+      : undefined;
+    if (action === "reject" && !rejectionReason?.trim()) return;
+    try {
+      await api.patch(`/reports/${reportId}/confirm-status`, { action, rejectionReason });
+      onChanged();
+    } catch (error) {
+      window.alert(error.response?.data?.message || "Impossible de traiter la demande.");
+    }
   }
 
   const stats = dashboard
@@ -104,7 +120,9 @@ function DashboardTab({ dashboard, pendingOrgs, pendingReports, onChanged }) {
         { label: "Signalements", value: dashboard.reports, icon: MapPin },
         { label: "Résolus", value: dashboard.resolvedReports, icon: CheckCircle2 },
         { label: "Statuts en attente", value: pendingReports.length, icon: Clock },
-        { label: "Dons déclarés", value: dashboard.donations, icon: Store }
+        { label: "Dons déclarés", value: dashboard.donations, icon: Store },
+        { label: "Organisations en attente", value: dashboard.pendingOrganizations, icon: ShieldCheck },
+        { label: "Organisations approuvées", value: dashboard.approvedOrganizations, icon: CheckCircle2 }
       ]
     : [];
 
@@ -226,15 +244,23 @@ function DashboardTab({ dashboard, pendingOrgs, pendingReports, onChanged }) {
 function UsersTab() {
   const [users, setUsers] = useState([]);
   const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   async function load() {
-    const params = roleFilter ? `?role=${roleFilter}` : "";
-    const { data } = await api.get(`/admin/users${params}`);
+    const params = new URLSearchParams();
+    if (roleFilter) params.set("role", roleFilter);
+    if (statusFilter) params.set("status", statusFilter);
+    if (search.trim()) params.set("search", search.trim());
+    const { data } = await api.get(`/admin/users?${params}`);
     setUsers(data);
   }
 
-  useEffect(() => { load(); }, [roleFilter]);
+  useEffect(() => {
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
+  }, [roleFilter, statusFilter, search]);
 
   async function deleteUser(id) {
     await api.delete(`/admin/users/${id}`);
@@ -256,6 +282,13 @@ function UsersTab() {
             <option value="association">Associations</option>
             <option value="restaurant">Restaurateurs</option>
           </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ fontSize: 13, padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1.5px solid var(--border)" }}>
+            <option value="">Tous les statuts</option>
+            <option value="active">Actifs</option>
+            <option value="pending">En attente</option>
+            <option value="rejected">Refusés</option>
+          </select>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher..." style={{ minWidth: 150 }} />
         </div>
         <div className="list-grid">
           {users.map((u) => (
@@ -303,7 +336,7 @@ function UsersTab() {
 // ─── Reports Tab ──────────────────────────────────────────────────────────────
 function ReportsTab({ onChanged }) {
   const [reports, setReports] = useState([]);
-  const [filters, setFilters] = useState({ status: "", urgency: "", type: "", pending: "", isAnonymous: "" });
+  const [filters, setFilters] = useState({ status: "", urgency: "", type: "", pending: "", isAnonymous: "", needs: "", search: "", from: "", to: "" });
   const [previewImage, setPreviewImage] = useState(null);
 
   async function load() {
@@ -313,6 +346,10 @@ function ReportsTab({ onChanged }) {
     if (filters.type) params.set("type", filters.type);
     if (filters.pending) params.set("pending", filters.pending);
     if (filters.isAnonymous) params.set("isAnonymous", filters.isAnonymous);
+    if (filters.needs) params.set("needs", filters.needs);
+    if (filters.search.trim()) params.set("search", filters.search.trim());
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
     const { data } = await api.get(`/admin/reports?${params}`);
     setReports(data);
   }
@@ -320,21 +357,37 @@ function ReportsTab({ onChanged }) {
   useEffect(() => { load(); }, [filters]);
 
   async function deleteReport(id) {
-    await api.delete(`/reports/${id}`);
-    load();
-    if (onChanged) onChanged();
+    if (!window.confirm("Retirer ce signalement de la plateforme ?")) return;
+    try {
+      await api.delete(`/reports/${id}`);
+      load();
+      if (onChanged) onChanged();
+    } catch (error) {
+      window.alert(error.response?.data?.message || "Impossible de retirer le signalement.");
+    }
   }
 
   async function handleAdminSetStatus(reportId, newStatus) {
-    await api.patch(`/reports/${reportId}`, { status: newStatus });
-    load();
-    if (onChanged) onChanged();
+    try {
+      await api.patch(`/reports/${reportId}`, { status: newStatus });
+      load();
+      if (onChanged) onChanged();
+    } catch (error) {
+      window.alert(error.response?.data?.message || "Transition de statut invalide.");
+      load();
+    }
   }
 
   async function handleConfirmReportStatus(reportId, action) {
-    await api.patch(`/reports/${reportId}/confirm-status`, { action });
-    load();
-    if (onChanged) onChanged();
+    const rejectionReason = action === "reject" ? window.prompt("Motif obligatoire du rejet :") : undefined;
+    if (action === "reject" && !rejectionReason?.trim()) return;
+    try {
+      await api.patch(`/reports/${reportId}/confirm-status`, { action, rejectionReason });
+      load();
+      if (onChanged) onChanged();
+    } catch (error) {
+      window.alert(error.response?.data?.message || "Impossible de traiter la demande.");
+    }
   }
 
   return (
@@ -370,6 +423,19 @@ function ReportsTab({ onChanged }) {
           <option value="">Tous créateurs</option>
           <option value="true">Signalements rapides (Anonymes)</option>
         </select>
+        <select value={filters.needs} onChange={(e) => setFilters((f) => ({ ...f, needs: e.target.value }))}>
+          <option value="">Tous les besoins</option>
+          <option value="food">Alimentation</option>
+          <option value="shelter">Hébergement</option>
+          <option value="health">Soins</option>
+          <option value="clothes">Vêtements</option>
+          <option value="hygiene">Hygiène</option>
+          <option value="psychological">Psychologique</option>
+          <option value="other">Autre</option>
+        </select>
+        <input value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} placeholder="Rechercher..." />
+        <label>Du <input type="date" value={filters.from} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} /></label>
+        <label>Au <input type="date" value={filters.to} onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))} /></label>
       </div>
 
       <div className="list-grid">
@@ -481,13 +547,31 @@ function ReportsTab({ onChanged }) {
 function DonationsTab() {
   const [donations, setDonations] = useState([]);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [status, setStatus] = useState("");
+  const [restaurant, setRestaurant] = useState("");
+  const [association, setAssociation] = useState("");
+  const [users, setUsers] = useState([]);
+  const [associations, setAssociations] = useState([]);
 
   async function load() {
-    const { data } = await api.get(`/admin/donations?year=${year}`);
+    const params = new URLSearchParams({ year: String(year) });
+    if (status) params.set("status", status);
+    if (restaurant) params.set("restaurant", restaurant);
+    if (association) params.set("association", association);
+    const { data } = await api.get(`/admin/donations?${params}`);
     setDonations(data);
   }
 
-  useEffect(() => { load(); }, [year]);
+  useEffect(() => {
+    load();
+    Promise.all([
+      api.get("/admin/users?role=restaurant"),
+      api.get("/admin/users?role=association")
+    ]).then(([restaurantsResponse, associationsResponse]) => {
+      setUsers(restaurantsResponse.data);
+      setAssociations(associationsResponse.data);
+    });
+  }, [year, status, restaurant, association]);
 
   const totalVal = donations.reduce((s, d) => s + (d.valuation?.estimatedValueEur || 0), 0).toFixed(2);
 
@@ -499,6 +583,21 @@ function DonationsTab() {
           <span className="metric">{totalVal} EUR valorisés</span>
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ fontSize: 13, padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1.5px solid var(--border)" }}>
             {[2024, 2025, 2026].map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Tous les statuts</option>
+            <option value="declared">Déclaré</option>
+            <option value="assigned">Affecté</option>
+            <option value="collected">Collecté</option>
+            <option value="cancelled">Annulé</option>
+          </select>
+          <select value={restaurant} onChange={(e) => setRestaurant(e.target.value)}>
+            <option value="">Tous les restaurateurs</option>
+            {users.map((user) => <option key={user._id} value={user._id}>{user.organizationName || user.email}</option>)}
+          </select>
+          <select value={association} onChange={(e) => setAssociation(e.target.value)}>
+            <option value="">Toutes les associations</option>
+            {associations.map((user) => <option key={user._id} value={user._id}>{user.organizationName || user.email}</option>)}
           </select>
         </div>
       </div>

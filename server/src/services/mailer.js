@@ -5,8 +5,7 @@ let transporter;
 function getTransporter() {
   if (transporter) return transporter;
   if (!process.env.SMTP_HOST) {
-    transporter = { sendMail: async (mail) => console.log("Email mock:", mail) };
-    return transporter;
+    throw new Error("SMTP_HOST must be configured to send email.");
   }
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,

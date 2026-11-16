@@ -2,8 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { auth, requireRole, requireValidatedOrganization } from "../middleware/auth.js";
 import { Report } from "../models/Report.js";
+import { User } from "../models/User.js";
 import { findMatchingAssociations } from "../services/routing.js";
 import { sendMail } from "../services/mailer.js";
+import { recordAudit } from "../services/audit.js";
 
 const router = Router();
 
@@ -167,8 +169,21 @@ router.patch("/:id", requireRole("association", "admin"), async (req, res) => {
   if (req.user.role === "association") {
     // If association requests a status change that is different from current status:
     if (update.status && update.status !== existingReport.status) {
+      if (existingReport.pendingStatus?.requestStatus === "pending") {
+        return res.status(409).json({ message: "Une demande de changement est déjà en attente." });
+      }
+      const allowedTransitions = {
+        new: ["in_progress", "removed"],
+        in_progress: ["resolved", "removed"],
+        resolved: ["removed"],
+        removed: []
+      };
+      if (!allowedTransitions[existingReport.status].includes(update.status)) {
+        return res.status(400).json({ message: "Transition de statut invalide." });
+      }
       existingReport.pendingStatus = {
         status: update.status,
+        requestStatus: "pending",
         requestedBy: req.user._id,
         requestedAt: new Date(),
         note: update.associationNotes || ""
@@ -177,8 +192,17 @@ router.patch("/:id", requireRole("association", "admin"), async (req, res) => {
     if (update.fulfilledNeeds !== undefined) existingReport.fulfilledNeeds = update.fulfilledNeeds;
     if (update.associationNotes !== undefined) existingReport.associationNotes = update.associationNotes;
   } else if (req.user.role === "admin") {
-    // Admin directly modifies status and clears pendingStatus
+    // Admin directly modifies the confirmed status and clears a pending request.
     if (update.status) {
+      const allowedTransitions = {
+        new: ["in_progress", "removed"],
+        in_progress: ["resolved", "removed"],
+        resolved: ["removed"],
+        removed: []
+      };
+      if (update.status !== existingReport.status && !allowedTransitions[existingReport.status].includes(update.status)) {
+        return res.status(400).json({ message: "Transition de statut invalide." });
+      }
       existingReport.status = update.status;
       existingReport.pendingStatus = undefined;
     }
@@ -188,6 +212,15 @@ router.patch("/:id", requireRole("association", "admin"), async (req, res) => {
   }
 
   await existingReport.save();
+  if (req.user.role === "admin") {
+    await recordAudit({
+      actor: req.user._id,
+      action: "report.updated",
+      entityType: "Report",
+      entityId: existingReport._id,
+      metadata: { status: update.status, adminNotesChanged: update.adminNotes !== undefined }
+    });
+  }
   const populated = await Report.findById(existingReport._id)
     .populate("assignedAssociations", "organizationName email phone helloAssoUrl")
     .populate("createdBy", "organizationName email")
@@ -198,20 +231,65 @@ router.patch("/:id", requireRole("association", "admin"), async (req, res) => {
 
 // Admin confirms or rejects association requested status change
 router.patch("/:id/confirm-status", requireRole("admin"), async (req, res) => {
-  const { action } = z.object({ action: z.enum(["approve", "reject"]) }).parse(req.body);
+  const { action, rejectionReason } = z.object({
+    action: z.enum(["approve", "reject"]),
+    rejectionReason: z.string().trim().max(1000).optional()
+  }).parse(req.body);
+  if (action === "reject" && !rejectionReason) {
+    return res.status(400).json({ message: "Un motif est obligatoire pour rejeter une demande." });
+  }
   const report = await Report.findById(req.params.id);
   if (!report) return res.status(404).json({ message: "Signalement introuvable." });
-
-  if (action === "approve") {
-    if (report.pendingStatus?.status) {
-      report.status = report.pendingStatus.status;
-    }
-    report.pendingStatus = undefined;
-  } else if (action === "reject") {
-    report.pendingStatus = undefined;
+  if (report.pendingStatus?.requestStatus !== "pending") {
+    return res.status(409).json({ message: "Aucune demande de changement en attente." });
   }
 
+  const request = report.pendingStatus.toObject();
+  report.statusChangeHistory.push({
+    proposedStatus: request.status,
+    requestedBy: request.requestedBy,
+    requestedAt: request.requestedAt,
+    note: request.note,
+    decision: action === "approve" ? "approved" : "rejected",
+    reviewedBy: req.user._id,
+    reviewedAt: new Date(),
+    rejectionReason: action === "reject" ? rejectionReason : undefined
+  });
+
+  if (action === "approve") {
+    const allowedTransitions = {
+      new: ["in_progress", "removed"],
+      in_progress: ["resolved", "removed"],
+      resolved: ["removed"],
+      removed: []
+    };
+    if (!allowedTransitions[report.status].includes(request.status)) {
+      return res.status(400).json({ message: "Transition de statut invalide." });
+    }
+    report.status = request.status;
+  }
+  report.pendingStatus = undefined;
+
   await report.save();
+  await recordAudit({
+    actor: req.user._id,
+    action: action === "approve" ? "report.status_approved" : "report.status_rejected",
+    entityType: "Report",
+    entityId: report._id,
+    metadata: { proposedStatus: request.status, rejectionReason }
+  });
+  if (request.requestedBy) {
+    const association = await User.findById(request.requestedBy).select("email organizationName");
+    if (association) {
+      await sendMail({
+        to: association.email,
+        subject: `SOS Link — Demande de statut ${action === "approve" ? "approuvée" : "rejetée"}`,
+        text: action === "approve"
+          ? `Votre demande de passage au statut "${request.status}" a été approuvée par l'administrateur.`
+          : `Votre demande de changement de statut a été rejetée. Motif : ${rejectionReason}`
+      }).catch((error) => console.error("Report decision email failed:", error));
+    }
+  }
   const populated = await Report.findById(report._id)
     .populate("assignedAssociations", "organizationName email phone helloAssoUrl")
     .populate("createdBy", "organizationName email")
@@ -221,9 +299,14 @@ router.patch("/:id/confirm-status", requireRole("admin"), async (req, res) => {
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
-  await Report.findByIdAndDelete(req.params.id);
+  const report = await Report.findByIdAndUpdate(
+    req.params.id,
+    { $set: { status: "removed", adminNotes: req.body?.reason || "Retiré par un administrateur." } },
+    { new: true, runValidators: true }
+  );
+  if (!report) return res.status(404).json({ message: "Signalement introuvable." });
+  await recordAudit({ actor: req.user._id, action: "report.removed", entityType: "Report", entityId: report._id });
   res.status(204).send();
 });
 
 export default router;
-

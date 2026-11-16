@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema(
       radiusKm: { type: Number, min: 0, max: 100 }
     },
     helloAssoUrl: String,
+    organizationValidation: {
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reviewedAt: Date,
+      rejectionReason: String
+    },
     emailVerified: { type: Boolean, default: true },
     consentRgpd: { type: Boolean, required: true },
     deletedAt: Date

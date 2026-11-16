@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { HeartHandshake, Building2, Utensils, User, Eye, EyeOff, MapPin, Heart, Lock } from "lucide-react";
+import { HeartHandshake, Building2, Store, User, Eye, EyeOff, MapPin, Heart, Lock } from "lucide-react";
 import { api } from "../api/http";
 import { useSession } from "../store/session";
 
 const ROLES = [
   { id: "citizen", label: "Citoyen", icon: User, desc: "Signalez des personnes en difficulté" },
   { id: "association", label: "Association", icon: Building2, desc: "Gérez les interventions terrain" },
-  { id: "restaurant", label: "Restaurateur", icon: Utensils, desc: "Déclarez vos invendus alimentaires" }
+  { id: "restaurant", label: "Commerce solidaire", icon: Store, desc: "Déclarez vos invendus alimentaires" }
 ];
 
 const SERVICES = [

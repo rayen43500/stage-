@@ -20,3 +20,17 @@ services:
         generateValue: true    # Render génère un secret aléatoire
       - key: CLIENT_URL
         sync: false            # URL du client déployé
+      - key: CORS_ORIGINS
+        sync: false            # Origines web autorisées, séparées par des virgules
+      - key: PUBLIC_BASE_URL
+        sync: false            # URL HTTPS publique du service API
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false

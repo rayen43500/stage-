@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import { User } from "../models/User.js";
-import { Report } from "../models/Report.js";
 import { signToken } from "../services/token.js";
 import { auth } from "../middleware/auth.js";
 import { sendMail } from "../services/mailer.js";
+import { Report } from "../models/Report.js";
+import { FoodDonation } from "../models/FoodDonation.js";
+import { AuditLog } from "../models/AuditLog.js";
+import mongoose from "mongoose";
 
 const router = Router();
 
@@ -152,20 +155,41 @@ router.patch("/password", auth, async (req, res) => {
   res.json({ message: "Mot de passe modifié avec succès." });
 });
 
-// RGPD: citizen can delete their own account + all reports they created
+// RGPD: soft-delete the account while preserving operational history.
 router.delete("/me", auth, async (req, res) => {
-  const userId = req.user._id;
-  // Soft-delete the user account
-  await User.findByIdAndUpdate(userId, {
-    deletedAt: new Date(),
-    email: `deleted-${userId}@soslink.local`
-  });
-  // RGPD: also remove all reports created by this citizen
-  if (req.user.role === "citizen") {
-    await Report.deleteMany({ createdBy: userId });
-  }
+  await permanentlyDeleteAccount(req.user._id);
   res.status(204).send();
 });
+
+export async function permanentlyDeleteAccount(userId) {
+  const accountId = new mongoose.Types.ObjectId(userId);
+  await Report.deleteMany({ createdBy: accountId });
+  await Report.updateMany(
+    { assignedAssociations: accountId },
+    { $pull: { assignedAssociations: accountId } }
+  );
+  await Report.updateMany(
+    { "pendingStatus.requestedBy": accountId },
+    { $unset: { pendingStatus: "" } }
+  );
+  await Report.updateMany(
+    { "statusChangeHistory.requestedBy": accountId },
+    { $set: { "statusChangeHistory.$[entry].requestedBy": null } },
+    { arrayFilters: [{ "entry.requestedBy": accountId }] }
+  );
+  await Report.updateMany(
+    { "statusChangeHistory.reviewedBy": accountId },
+    { $set: { "statusChangeHistory.$[entry].reviewedBy": null } },
+    { arrayFilters: [{ "entry.reviewedBy": accountId }] }
+  );
+  await FoodDonation.deleteMany({ restaurant: accountId });
+  await FoodDonation.updateMany(
+    { assignedAssociation: accountId },
+    { $unset: { assignedAssociation: "" }, $set: { status: "declared" } }
+  );
+  await AuditLog.updateMany({ actor: accountId }, { $set: { actor: null } });
+  await User.deleteOne({ _id: accountId });
+}
 
 function sanitize(user) {
   const obj = user.toObject();

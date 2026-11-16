@@ -156,8 +156,19 @@ router.patch("/:id/status", requireRole("association", "admin"), async (req, res
     .parse(req.body);
   const filter = { _id: req.params.id };
   if (req.user.role === "association") filter.assignedAssociation = req.user._id;
-  const donation = await FoodDonation.findOneAndUpdate(filter, { status }, { new: true });
+  const donation = await FoodDonation.findOne(filter);
   if (!donation) return res.status(404).json({ message: "Don introuvable." });
+  const allowedTransitions = {
+    declared: ["assigned", "cancelled"],
+    assigned: ["collected", "cancelled"],
+    collected: [],
+    cancelled: []
+  };
+  if (status !== donation.status && !allowedTransitions[donation.status].includes(status)) {
+    return res.status(400).json({ message: "Transition de don invalide." });
+  }
+  donation.status = status;
+  await donation.save();
   res.json(donation);
 });
 

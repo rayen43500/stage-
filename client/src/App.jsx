@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  BackHandler,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -41,6 +44,45 @@ const colors = {
   textMuted: "#8AA099",     // Texte grisé
   border: "#D6E8E0",        // Bordure subtile
   borderLight: "#E8F2ED"
+};
+
+const createUser = async () => {
+  if (!newUserDraft.email.trim() || newUserDraft.password.length < 8) {
+    Alert.alert("Champs invalides", "Un e-mail et un mot de passe de 8 caractères minimum sont requis.");
+    return;
+  }
+  try {
+    await api.post("/admin/users", newUserDraft);
+    setUserComposerVisible(false);
+    setNewUserDraft({ email: "", password: "", role: "citizen", consentRgpd: true });
+    Alert.alert("Succès", "Utilisateur créé.");
+    load();
+  } catch (e) {
+    Alert.alert("Erreur", errorMessage(e));
+  }
+};
+
+const editReport = (report) => {
+  setReportDraft({
+    ...report,
+    adminNotes: report.adminNotes || "",
+    fulfilledNeeds: report.fulfilledNeeds || []
+  });
+};
+
+const saveReport = async () => {
+  try {
+    await api.patch(`/reports/${reportDraft._id}`, {
+      adminNotes: reportDraft.adminNotes,
+      fulfilledNeeds: reportDraft.fulfilledNeeds
+    });
+    setSelectedReport({ ...selectedReport, adminNotes: reportDraft.adminNotes, fulfilledNeeds: reportDraft.fulfilledNeeds });
+    setReportDraft(null);
+    Alert.alert("Succès", "Signalement mis à jour.");
+    load();
+  } catch (e) {
+    Alert.alert("Erreur", errorMessage(e));
+  }
 };
 
 const API_URL =
@@ -159,16 +201,71 @@ function PrimaryButton({ title, onPress, variant = "primary", disabled = false, 
   );
 }
 
-function InputField({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType = "default", icon }) {
+function useKeyboard() {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+      setKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  return { keyboardHeight, isKeyboardVisible };
+}
+
+function InputField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  secureTextEntry,
+  multiline,
+  keyboardType = "default",
+  icon,
+  onFocus,
+  onBlur,
+  returnKeyType,
+  onSubmitEditing,
+  inputRef
+}) {
   const [showPassword, setShowPassword] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const isSecure = secureTextEntry && !showPassword;
 
   return (
     <View style={styles.inputGroup}>
       {label && <Text style={styles.inputLabel}>{label}</Text>}
-      <View style={[styles.inputWrapper, multiline && { minHeight: 96, alignItems: "flex-start", paddingTop: 12 }]}>
-        {icon && <Ionicons name={icon} size={20} color={colors.textMuted} style={styles.inputIcon} />}
+      <View
+        style={[
+          styles.inputWrapper,
+          multiline && { minHeight: 96, alignItems: "flex-start", paddingTop: 12 },
+          isFocused && { borderColor: colors.primary, borderWidth: 1.5, backgroundColor: "#FFFFFF" }
+        ]}
+      >
+        {icon && (
+          <Ionicons
+            name={icon}
+            size={20}
+            color={isFocused ? colors.primary : colors.textMuted}
+            style={styles.inputIcon}
+          />
+        )}
         <TextInput
+          ref={inputRef}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -176,10 +273,20 @@ function InputField({ label, value, onChangeText, placeholder, secureTextEntry, 
           secureTextEntry={isSecure}
           multiline={multiline}
           keyboardType={keyboardType}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
+          onFocus={(e) => {
+            setIsFocused(true);
+            if (onFocus) onFocus(e);
+          }}
+          onBlur={(e) => {
+            setIsFocused(false);
+            if (onBlur) onBlur(e);
+          }}
           style={[styles.inputField, multiline && { textAlignVertical: "top" }]}
         />
         {secureTextEntry && (
-          <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+          <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon} hitSlop={8}>
             <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
           </Pressable>
         )}
@@ -191,13 +298,17 @@ function InputField({ label, value, onChangeText, placeholder, secureTextEntry, 
 function StatCard({ title, value, icon, subtitle, color = colors.primary }) {
   return (
     <View style={styles.kpiCard}>
-      <View style={[styles.kpiIconBox, { backgroundColor: `${color}18` }]}>
-        <Ionicons name={icon} size={22} color={color} />
-      </View>
-      <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <View style={[styles.kpiIconBox, { backgroundColor: `${color}18` }]}>
+          <Ionicons name={icon} size={20} color={color} />
+        </View>
         <Text style={[styles.kpiValue, { color }]}>{value}</Text>
-        <Text style={styles.kpiTitle}>{title}</Text>
-        {subtitle && <Text style={styles.kpiSubtitle}>{subtitle}</Text>}
+      </View>
+      <View style={{ marginTop: 8 }}>
+        <Text style={styles.kpiTitle} numberOfLines={2}>{title}</Text>
+        {subtitle ? (
+          <Text style={styles.kpiSubtitle} numberOfLines={1}>{subtitle}</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -352,6 +463,14 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
   }
 
   // Fallback mobile natif avec bouton d'ouverture Waze / Google Maps
+  const firstCoords = reports.find((r) => r.location?.coordinates?.length === 2)?.location.coordinates;
+  const mapsUrl = firstCoords
+    ? Platform.select({
+        android: `geo:${firstCoords[1]},${firstCoords[0]}?q=${firstCoords[1]},${firstCoords[0]}(Signalements+SolidAid)`,
+        default: `https://www.google.com/maps/search/?api=1&query=${firstCoords[1]},${firstCoords[0]}`
+      })
+    : "https://www.google.com/maps";
+
   return (
     <View style={[styles.mapNativeCard, isFullMap ? { flex: 1, width: "100%", borderRadius: 0 } : { height }]}>
       <Ionicons name="map" size={44} color={colors.primary} />
@@ -361,7 +480,7 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
         title="Ouvrir dans Google Maps"
         icon="navigate-outline"
         variant="white"
-        onPress={() => Linking.openURL("https://www.google.com/maps")}
+        onPress={() => Linking.openURL(mapsUrl)}
       />
     </View>
   );
@@ -443,6 +562,26 @@ function PublicApp({ login }) {
   const [screen, setScreen] = useState("landing");
   const [quickReportOpen, setQuickReportOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  useEffect(() => {
+    const handleBack = () => {
+      if (privacyOpen) {
+        setPrivacyOpen(false);
+        return true;
+      }
+      if (quickReportOpen) {
+        setQuickReportOpen(false);
+        return true;
+      }
+      if (screen === "auth") {
+        setScreen("landing");
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [screen, quickReportOpen, privacyOpen]);
 
   return (
     <View style={styles.flex}>
@@ -597,6 +736,22 @@ function QuickReportModal({ visible, close }) {
   const [imageData, setImageData] = useState("");
   const [coords, setCoords] = useState(initialCoords);
   const [busy, setBusy] = useState(false);
+  const { keyboardHeight } = useKeyboard();
+  const qrScrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleBack = () => {
+      if (step > 1) {
+        setStep((s) => s - 1);
+        return true;
+      }
+      close();
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [visible, step, close]);
 
   const categories = [
     { id: "social", label: "Problème social", icon: "warning", color: "#F59E0B" },
@@ -632,9 +787,11 @@ function QuickReportModal({ visible, close }) {
   };
 
   const pickImage = async () => {
-    const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!p.granted) return Alert.alert("Galerie", "Autorisez l'accès à la galerie photo.");
-    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: true });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+      base64: true
+    });
     if (!res.canceled && res.assets?.[0]?.base64) {
       setImageData(`data:image/jpeg;base64,${res.assets[0].base64}`);
     }
@@ -682,30 +839,43 @@ function QuickReportModal({ visible, close }) {
   return (
     <Modal visible={visible} animationType="slide">
       <SafeAreaView style={styles.modalSafeArea}>
-        {/* Modal Header */}
-        <View style={styles.modalTopNav}>
-          <Pressable onPress={close} style={styles.modalCloseBtn}>
-            <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modalHeaderTitle}>Signalement rapide</Text>
-            <Text style={styles.modalHeaderSubtitle}>Décrivez la situation pour alerter les équipes locales.</Text>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* Modal Header */}
+          <View style={styles.modalTopNav}>
+            <Pressable onPress={close} style={styles.modalCloseBtn}>
+              <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalHeaderTitle}>Signalement rapide</Text>
+              <Text style={styles.modalHeaderSubtitle}>Décrivez la situation pour alerter les équipes locales.</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Stepper (1 - 2 - 3) */}
-        <View style={styles.stepperRow}>
-          {[1, 2, 3].map((num) => (
-            <React.Fragment key={num}>
-              <View style={[styles.stepCircle, step >= num && styles.stepCircleActive]}>
-                <Text style={[styles.stepNumber, step >= num && styles.stepNumberActive]}>{num}</Text>
-              </View>
-              {num < 3 && <View style={[styles.stepLine, step > num && styles.stepLineActive]} />}
-            </React.Fragment>
-          ))}
-        </View>
+          {/* Stepper (1 - 2 - 3) */}
+          <View style={styles.stepperRow}>
+            {[1, 2, 3].map((num) => (
+              <React.Fragment key={num}>
+                <View style={[styles.stepCircle, step >= num && styles.stepCircleActive]}>
+                  <Text style={[styles.stepNumber, step >= num && styles.stepNumberActive]}>{num}</Text>
+                </View>
+                {num < 3 && <View style={[styles.stepLine, step > num && styles.stepLineActive]} />}
+              </React.Fragment>
+            ))}
+          </View>
 
-        <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={qrScrollRef}
+            contentContainerStyle={[
+              styles.modalScrollBody,
+              { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 60 }
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
           {step === 1 && (
             <View style={{ gap: 16 }}>
               <Text style={styles.formSectionLabel}>Type de signalement</Text>
@@ -864,6 +1034,7 @@ function QuickReportModal({ visible, close }) {
             </View>
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -892,9 +1063,30 @@ function AuthScreen({ login, back }) {
   const [selectedServices, setSelectedServices] = useState(["food", "shelter"]);
   const [privacyOpen, setPrivacyOpen] = useState(false);
 
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard();
+  const scrollRef = useRef(null);
+  const fieldY = useRef({});
+
+  const registerLayout = (key) => (e) => {
+    fieldY.current[key] = e.nativeEvent.layout.y;
+  };
+
+  const scrollToField = (key) => {
+    const y = fieldY.current[key];
+    if (typeof y === "number" && scrollRef.current) {
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, y - 50),
+          animated: true
+        });
+      }, 100);
+    }
+  };
+
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
+    Keyboard.dismiss();
     if (!form.email || !form.password) {
       return Alert.alert("Champs requis", "Saisissez votre e-mail et mot de passe.");
     }
@@ -932,149 +1124,200 @@ function AuthScreen({ login, back }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
-      <Pressable onPress={back} style={styles.backArrowBtn}>
-        <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
-      </Pressable>
-
-      <View style={{ alignItems: "center", marginVertical: 12 }}>
-        <BrandLogo size="large" />
-      </View>
-
-      <Text style={styles.authTitle}>{mode === "login" ? "Connexion" : "Créer un compte"}</Text>
-      <Text style={styles.authSubtitle}>
-        {mode === "login"
-          ? "Accédez à votre espace Solid'Aid."
-          : "Rejoignez le réseau solidaire citoyen et associatif Solid'Aid."}
-      </Text>
-
-      {/* Tabs Connexion / Inscription */}
-      <View style={styles.authTabs}>
-        <Pressable
-          onPress={() => setMode("login")}
-          style={[styles.authTabItem, mode === "login" && styles.authTabItemActive]}
-        >
-          <Text style={[styles.authTabText, mode === "login" && styles.authTabTextActive]}>Connexion</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+    >
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={[
+          styles.scrollPage,
+          {
+            paddingBottom: keyboardHeight > 0
+              ? keyboardHeight + 80
+              : Platform.select({ android: 110, ios: 100, default: 60 })
+          }
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+      >
+        <Pressable onPress={back} style={styles.backArrowBtn}>
+          <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
         </Pressable>
-        <Pressable
-          onPress={() => setMode("register")}
-          style={[styles.authTabItem, mode === "register" && styles.authTabItemActive]}
-        >
-          <Text style={[styles.authTabText, mode === "register" && styles.authTabTextActive]}>Inscription</Text>
+
+        <View style={{ alignItems: "center", marginVertical: 12 }}>
+          <BrandLogo size="large" />
+        </View>
+
+        <Text style={styles.authTitle}>{mode === "login" ? "Connexion" : "Créer un compte"}</Text>
+        <Text style={styles.authSubtitle}>
+          {mode === "login"
+            ? "Accédez à votre espace Solid'Aid."
+            : "Rejoignez le réseau solidaire citoyen et associatif Solid'Aid."}
+        </Text>
+
+        {/* Tabs Connexion / Inscription */}
+        <View style={styles.authTabs}>
+          <Pressable
+            onPress={() => setMode("login")}
+            style={[styles.authTabItem, mode === "login" && styles.authTabItemActive]}
+          >
+            <Text style={[styles.authTabText, mode === "login" && styles.authTabTextActive]}>Connexion</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setMode("register")}
+            style={[styles.authTabItem, mode === "register" && styles.authTabItemActive]}
+          >
+            <Text style={[styles.authTabText, mode === "register" && styles.authTabTextActive]}>Inscription</Text>
+          </Pressable>
+        </View>
+
+        {mode === "register" && (
+          <View style={{ marginBottom: 12 }}>
+            <Text style={styles.inputLabel}>Type de compte</Text>
+            <View style={styles.rolePicker}>
+              {[
+                ["citizen", "Citoyen", "person-outline"],
+                ["association", "Association", "people-outline"],
+                ["restaurant", "Commerce solidaire", "storefront-outline"]
+              ].map(([id, title, icon]) => (
+                <Pressable
+                  key={id}
+                  onPress={() => setRole(id)}
+                  style={[styles.roleChip, role === id && styles.roleChipActive]}
+                >
+                  <Ionicons name={icon} size={16} color={role === id ? "#FFFFFF" : colors.primary} />
+                  <Text style={[styles.roleChipText, role === id && styles.roleChipTextActive]}>{title}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {mode === "register" && (
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <View style={{ flex: 1 }} onLayout={registerLayout("firstName")}>
+              <InputField
+                label="Prénom"
+                value={form.firstName}
+                onChangeText={set("firstName")}
+                placeholder="Ex. Noujoud"
+                icon="person-outline"
+                returnKeyType="next"
+                onFocus={() => scrollToField("firstName")}
+              />
+            </View>
+            <View style={{ flex: 1 }} onLayout={registerLayout("lastName")}>
+              <InputField
+                label="Nom"
+                value={form.lastName}
+                onChangeText={set("lastName")}
+                placeholder="Ex. Hajji"
+                icon="person-outline"
+                returnKeyType="next"
+                onFocus={() => scrollToField("lastName")}
+              />
+            </View>
+          </View>
+        )}
+
+        <View onLayout={registerLayout("email")}>
+          <InputField
+            label="Email ou identifiant"
+            value={form.email}
+            onChangeText={set("email")}
+            placeholder="nom@exemple.com"
+            icon="mail-outline"
+            keyboardType="email-address"
+            returnKeyType="next"
+            onFocus={() => scrollToField("email")}
+          />
+        </View>
+
+        <View onLayout={registerLayout("password")}>
+          <InputField
+            label="Mot de passe"
+            value={form.password}
+            onChangeText={set("password")}
+            placeholder="8 caractères minimum"
+            icon="lock-closed-outline"
+            secureTextEntry
+            returnKeyType={mode === "register" && role !== "citizen" ? "next" : "done"}
+            onFocus={() => scrollToField("password")}
+            onSubmitEditing={mode === "login" || role === "citizen" ? submit : undefined}
+          />
+        </View>
+
+        {mode === "register" && role !== "citizen" && (
+          <View style={{ gap: 12, marginTop: 4 }}>
+            <View onLayout={registerLayout("organizationName")}>
+              <InputField
+                label="Nom de la structure"
+                value={form.organizationName}
+                onChangeText={set("organizationName")}
+                placeholder="Ex. Croix-Rouge Paris 10, Bistrot Gourmand..."
+                icon="business-outline"
+                returnKeyType="next"
+                onFocus={() => scrollToField("organizationName")}
+              />
+            </View>
+            <View onLayout={registerLayout("sirenSiret")}>
+              <InputField
+                label="Numéro SIREN / SIRET"
+                value={form.sirenSiret}
+                onChangeText={set("sirenSiret")}
+                placeholder="14 chiffres"
+                keyboardType="numeric"
+                icon="card-outline"
+                returnKeyType="next"
+                onFocus={() => scrollToField("sirenSiret")}
+              />
+            </View>
+            <View onLayout={registerLayout("address")}>
+              <InputField
+                label="Adresse du siège / local"
+                value={form.address}
+                onChangeText={set("address")}
+                placeholder="Ex. 24 Rue d'Hauteville, 75010 Paris"
+                icon="location-outline"
+                returnKeyType="next"
+                onFocus={() => scrollToField("address")}
+              />
+            </View>
+            <View onLayout={registerLayout("phone")}>
+              <InputField
+                label="Numéro de téléphone"
+                value={form.phone}
+                onChangeText={set("phone")}
+                placeholder="01..."
+                keyboardType="phone-pad"
+                returnKeyType="done"
+                onFocus={() => scrollToField("phone")}
+                onSubmitEditing={submit}
+              />
+            </View>
+          </View>
+        )}
+
+        <View onLayout={registerLayout("submitBtn")}>
+          <PrimaryButton
+            title={busy ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : "Créer mon compte"}
+            disabled={busy}
+            onPress={submit}
+            style={{ marginTop: 12 }}
+          />
+        </View>
+
+        <Pressable onPress={() => setPrivacyOpen(true)} style={{ marginTop: 16, alignItems: "center" }}>
+          <Text style={styles.legalSmallLink}>En continuant, vous acceptez notre Politique de Confidentialité (RGPD)</Text>
         </Pressable>
-      </View>
 
-      {mode === "register" && (
-        <View style={{ marginBottom: 12 }}>
-          <Text style={styles.inputLabel}>Type de compte</Text>
-          <View style={styles.rolePicker}>
-            {[
-              ["citizen", "Citoyen", "person-outline"],
-              ["association", "Association", "people-outline"],
-              ["restaurant", "Commerce solidaire", "restaurant-outline"]
-            ].map(([id, title, icon]) => (
-              <Pressable
-                key={id}
-                onPress={() => setRole(id)}
-                style={[styles.roleChip, role === id && styles.roleChipActive]}
-              >
-                <Ionicons name={icon} size={16} color={role === id ? "#FFFFFF" : colors.primary} />
-                <Text style={[styles.roleChipText, role === id && styles.roleChipTextActive]}>{title}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {mode === "register" && (
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <InputField
-              label="Prénom"
-              value={form.firstName}
-              onChangeText={set("firstName")}
-              placeholder="Ex. Noujoud"
-              icon="person-outline"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <InputField
-              label="Nom"
-              value={form.lastName}
-              onChangeText={set("lastName")}
-              placeholder="Ex. Hajji"
-              icon="person-outline"
-            />
-          </View>
-        </View>
-      )}
-
-      <InputField
-        label="Email ou identifiant"
-        value={form.email}
-        onChangeText={set("email")}
-        placeholder="nom@exemple.com"
-        icon="mail-outline"
-        keyboardType="email-address"
-      />
-
-      <InputField
-        label="Mot de passe"
-        value={form.password}
-        onChangeText={set("password")}
-        placeholder="8 caractères minimum"
-        icon="lock-closed-outline"
-        secureTextEntry
-      />
-
-      {mode === "register" && role !== "citizen" && (
-        <View style={{ gap: 12, marginTop: 4 }}>
-          <InputField
-            label="Nom de la structure"
-            value={form.organizationName}
-            onChangeText={set("organizationName")}
-            placeholder="Ex. Croix-Rouge Paris 10, Bistrot Gourmand..."
-            icon="business-outline"
-          />
-          <InputField
-            label="Numéro SIREN / SIRET"
-            value={form.sirenSiret}
-            onChangeText={set("sirenSiret")}
-            placeholder="14 chiffres"
-            keyboardType="numeric"
-            icon="card-outline"
-          />
-          <InputField
-            label="Adresse du siège / local"
-            value={form.address}
-            onChangeText={set("address")}
-            placeholder="Ex. 24 Rue d'Hauteville, 75010 Paris"
-            icon="location-outline"
-          />
-          <InputField
-            label="Numéro de téléphone"
-            value={form.phone}
-            onChangeText={set("phone")}
-            placeholder="01..."
-            keyboardType="phone-pad"
-            icon="call-outline"
-          />
-        </View>
-      )}
-
-      <PrimaryButton
-        title={busy ? "Veuillez patienter…" : mode === "login" ? "Se connecter" : "Créer mon compte"}
-        disabled={busy}
-        onPress={submit}
-        style={{ marginTop: 12 }}
-      />
-
-      <Pressable onPress={() => setPrivacyOpen(true)} style={{ marginTop: 16, alignItems: "center" }}>
-        <Text style={styles.legalSmallLink}>En continuant, vous acceptez notre Politique de Confidentialité (RGPD)</Text>
-      </Pressable>
-
-      <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
-    </ScrollView>
+        <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1084,9 +1327,30 @@ function AuthScreen({ login, back }) {
 
 function PrivateApp({ session, logout, updateUser }) {
   const { user } = session;
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState(user.role === "admin" ? "admin" : "home");
   const [quickReportOpen, setQuickReportOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const { isKeyboardVisible } = useKeyboard();
+
+  useEffect(() => {
+    const handleBack = () => {
+      if (profileModalOpen) {
+        setProfileModalOpen(false);
+        return true;
+      }
+      if (quickReportOpen) {
+        setQuickReportOpen(false);
+        return true;
+      }
+      if (tab !== "home") {
+        setTab("home");
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [tab, quickReportOpen, profileModalOpen]);
 
   if (["association", "restaurant"].includes(user.role) && user.status !== "active") {
     return <PendingScreen user={user} logout={logout} />;
@@ -1139,8 +1403,9 @@ function PrivateApp({ session, logout, updateUser }) {
         {tab === "admin" && <AdminScreen />}
       </View>
 
-      {/* Barre de navigation basse conforme au Mockup */}
-      <View style={styles.bottomTabBar}>
+      {/* Barre de navigation basse conforme au Mockup (masquée avec le clavier ouvert) */}
+      {!isKeyboardVisible && (
+        <View style={styles.bottomTabBar}>
         <Pressable onPress={() => setTab("home")} style={styles.tabBarItem}>
           <Ionicons name={tab === "home" ? "home" : "home-outline"} size={22} color={tab === "home" ? colors.primary : colors.textMuted} />
           <Text style={[styles.tabBarText, tab === "home" && styles.tabBarTextActive]}>Accueil</Text>
@@ -1165,7 +1430,7 @@ function PrivateApp({ session, logout, updateUser }) {
           </Pressable>
         ) : (
           <Pressable onPress={() => setTab("donations")} style={styles.tabBarItem}>
-            <Ionicons name={tab === "donations" ? "restaurant" : "restaurant-outline"} size={22} color={tab === "donations" ? colors.primary : colors.textMuted} />
+            <Ionicons name={tab === "donations" ? "storefront" : "storefront-outline"} size={22} color={tab === "donations" ? colors.primary : colors.textMuted} />
             <Text style={[styles.tabBarText, tab === "donations" && styles.tabBarTextActive]}>Invendus</Text>
           </Pressable>
         )}
@@ -1181,7 +1446,8 @@ function PrivateApp({ session, logout, updateUser }) {
             <Text style={styles.tabBarText}>Profil</Text>
           </Pressable>
         )}
-      </View>
+        </View>
+      )}
 
       <QuickReportModal visible={quickReportOpen} close={() => setQuickReportOpen(false)} />
       <ProfileModal
@@ -1202,10 +1468,22 @@ function PrivateApp({ session, logout, updateUser }) {
 function HomeScreen({ user, goTab, openReport }) {
   const [reports, setReports] = useState([]);
   const [donations, setDonations] = useState([]);
+  const [posts, setPosts] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
   const [lightbox, setLightbox] = useState(null);
 
   useEffect(() => {
+    if (!lightbox) return;
+    const handleBack = () => {
+      setLightbox(null);
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [lightbox]);
+
+  useEffect(() => {
+    api.get("/blog").then(({ data }) => setPosts(data)).catch(() => {});
     if (user.role === "admin") {
       api.get("/admin/dashboard").then(({ data }) => setAdminStats(data)).catch(() => {});
     } else {
@@ -1251,11 +1529,11 @@ function HomeScreen({ user, goTab, openReport }) {
             <StatCard title="Urgences critiques" value={urgentCount} icon="warning" color={colors.danger} subtitle="Danger immédiat" />
             <StatCard title="En cours" value={inProgressCount} icon="time" color={colors.alert} subtitle="Interventions" />
             <StatCard title="Résolus" value={resolvedCount} icon="checkmark-done" color={colors.success} subtitle="Mis à l'abri" />
-            <StatCard title="Invendus à collecter" value={donations.length} icon="restaurant" color={colors.info} subtitle="Dons alimentaires" />
+            <StatCard title="Invendus à collecter" value={donations.length} icon="storefront-outline" color={colors.info} subtitle="Commerces solidaires" />
           </>
         ) : user.role === "restaurant" ? (
           <>
-            <StatCard title="Dons publiés" value={donations.length} icon="cube" color={colors.primary} subtitle="Total partagé" />
+            <StatCard title="Dons publiés" value={donations.length} icon="storefront" color={colors.primary} subtitle="Total partagé" />
             <StatCard title="Repas sauvés" value="70+" icon="heart" color={colors.success} subtitle="Contre le gaspillage" />
             <StatCard title="Associations" value="4" icon="people" color={colors.info} subtitle="Partenaires" />
             <StatCard title="Défiscalisation" value="420 €" icon="receipt" color={colors.alert} subtitle="Attestation reçue" />
@@ -1265,7 +1543,7 @@ function HomeScreen({ user, goTab, openReport }) {
             <StatCard title="Utilisateurs" value={adminStats.users} icon="people" color={colors.primary} />
             <StatCard title="À valider" value={adminStats.pendingOrganizations} icon="shield-outline" color={colors.alert} />
             <StatCard title="Signalements" value={adminStats.reports} icon="map" color={colors.danger} />
-            <StatCard title="Dons alimentaires" value={adminStats.donations} icon="restaurant" color={colors.success} />
+            <StatCard title="Dons alimentaires" value={adminStats.donations} icon="storefront-outline" color={colors.success} />
           </>
         ) : (
           <>
@@ -1392,6 +1670,23 @@ function HomeScreen({ user, goTab, openReport }) {
         </View>
       )}
 
+      {posts.length > 0 && (
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionHeaderTitle}>Actualités solidaires</Text>
+          <Text style={styles.bodyMuted}>Les dernières informations de Solid'Aid</Text>
+          {posts.slice(0, 5).map((post) => (
+            <View key={post._id} style={[styles.priorityCard, { marginTop: 10 }]}>
+              {post.imageUrl ? (
+                <Image source={{ uri: post.imageUrl }} style={{ width: "100%", height: 130, borderRadius: 10, marginBottom: 8 }} resizeMode="cover" />
+              ) : null}
+              <Text style={styles.priorityCardTitle}>{post.title}</Text>
+              <Text style={styles.bodyMuted}>{post.category} · {post.author}</Text>
+              <Text style={styles.priorityCardComment}>{post.summary}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <ImageLightboxModal visible={!!lightbox} image={lightbox} close={() => setLightbox(null)} />
     </ScrollView>
   );
@@ -1455,6 +1750,16 @@ function ReportsScreen({ user, openNew }) {
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const handleBack = () => {
+      setLightbox(null);
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [lightbox]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1603,6 +1908,24 @@ function DonationsScreen({ user }) {
   const [photoData, setPhotoData] = useState("");
   const [busy, setBusy] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  const { keyboardHeight } = useKeyboard();
+  const donScrollRef = useRef(null);
+
+  useEffect(() => {
+    const handleBack = () => {
+      if (lightbox) {
+        setLightbox(null);
+        return true;
+      }
+      if (formOpen) {
+        setFormOpen(false);
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [lightbox, formOpen]);
 
   const load = useCallback(() => {
     api.get("/donations").then(({ data }) => setItems(data)).catch(() => {});
@@ -1622,9 +1945,11 @@ function DonationsScreen({ user }) {
   };
 
   const pickImage = async () => {
-    const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!p.granted) return Alert.alert("Galerie", "Autorisez l'accès à la bibliothèque photos.");
-    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: true });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+      base64: true
+    });
     if (!res.canceled && res.assets?.[0]?.base64) {
       setPhotoData(`data:image/jpeg;base64,${res.assets[0].base64}`);
     }
@@ -1698,7 +2023,7 @@ function DonationsScreen({ user }) {
 
           <View style={styles.donationCardHeader}>
             <View style={styles.donationIconBox}>
-              <Ionicons name="restaurant" size={22} color={colors.primary} />
+              <Ionicons name="storefront" size={22} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.donationTitle}>{d.description}</Text>
@@ -1729,13 +2054,26 @@ function DonationsScreen({ user }) {
       {/* Modal Créer Don */}
       <Modal visible={formOpen} animationType="slide">
         <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalTopNav}>
-            <Pressable onPress={() => setFormOpen(false)} style={styles.modalCloseBtn}>
-              <Ionicons name="close" size={24} color={colors.primaryDark} />
-            </Pressable>
-            <Text style={styles.modalHeaderTitle}>Déclarer un don d'invendus</Text>
-          </View>
-          <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <View style={styles.modalTopNav}>
+              <Pressable onPress={() => setFormOpen(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={24} color={colors.primaryDark} />
+              </Pressable>
+              <Text style={styles.modalHeaderTitle}>Déclarer un don d'invendus</Text>
+            </View>
+            <ScrollView
+              ref={donScrollRef}
+              contentContainerStyle={[
+                styles.modalScrollBody,
+                { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 60 }
+              ]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
             <InputField
               label="Description des denrées"
               value={desc}
@@ -1787,7 +2125,8 @@ function DonationsScreen({ user }) {
               onPress={sendDonation}
               style={{ marginTop: 12 }}
             />
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 
@@ -1803,17 +2142,66 @@ function DonationsScreen({ user }) {
 function AdminScreen() {
   const [stats, setStats] = useState(null);
   const [pending, setPending] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [donations, setDonations] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [section, setSection] = useState("overview");
+  const [reportStatus, setReportStatus] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userDraft, setUserDraft] = useState(null);
+  const [userComposerVisible, setUserComposerVisible] = useState(false);
+  const [newUserDraft, setNewUserDraft] = useState({ email: "", password: "", role: "citizen", consentRgpd: true });
+  const [reportDraft, setReportDraft] = useState(null);
+  const [postComposerVisible, setPostComposerVisible] = useState(false);
+  const [postDraft, setPostDraft] = useState({ title: "", summary: "", content: "" });
 
   const load = useCallback(async () => {
-    try {
-      const [sRes, pRes] = await Promise.all([
-        api.get("/admin/dashboard"),
-        api.get("/admin/organizations/pending")
-      ]);
-      setStats(sRes.data);
-      setPending(pRes.data);
-    } catch {}
-  }, []);
+    setLoading(true);
+    setError("");
+    const requests = await Promise.allSettled([
+      api.get("/admin/dashboard"),
+      api.get("/admin/organizations/pending"),
+      api.get("/admin/organizations"),
+      api.get(`/admin/reports?${reportStatus ? `status=${reportStatus}&` : ""}${pendingOnly ? "pending=true&" : ""}${search ? `search=${encodeURIComponent(search)}` : ""}`),
+      api.get("/admin/donations"),
+      api.get(`/admin/users${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+      api.get("/blog")
+    ]);
+
+    const failures = [];
+    const data = (index, label) => {
+      const request = requests[index];
+      if (request.status === "fulfilled") return request.value.data;
+      const status = request.reason?.response?.status;
+      failures.push(status === 401 ? `${label} : session administrateur expirée` : `${label} : ${errorMessage(request.reason)}`);
+      return null;
+    };
+
+    const statsData = data(0, "Tableau de bord");
+    const pendingData = data(1, "Organisations en attente");
+    const organizationsData = data(2, "Organisations");
+    const reportsData = data(3, "Signalements");
+    const donationsData = data(4, "Dons");
+    const usersData = data(5, "Utilisateurs");
+    const postsData = data(6, "Blog");
+
+    if (statsData) setStats(statsData);
+    if (pendingData) setPending(pendingData);
+    if (organizationsData) setOrganizations(organizationsData);
+    if (reportsData) setReports(reportsData);
+    if (donationsData) setDonations(donationsData);
+    if (usersData) setUsers(usersData);
+    if (postsData) setPosts(postsData);
+    setError(failures.length ? failures.join("\n") : "");
+    setLoading(false);
+  }, [reportStatus, pendingOnly, search]);
 
   useEffect(() => {
     load();
@@ -1821,7 +2209,19 @@ function AdminScreen() {
 
   const setStatus = async (id, status) => {
     try {
-      await api.patch(`/admin/organizations/${id}/status`, { status });
+      const rejectionReason = status === "rejected"
+        ? await new Promise((resolve) => Alert.alert(
+            "Motif du refus",
+            "Sélectionnez le motif applicable.",
+            [
+              { text: "Informations incomplètes", onPress: () => resolve("Informations incomplètes.") },
+              { text: "Documents non conformes", onPress: () => resolve("Documents non conformes.") },
+              { text: "Annuler", style: "cancel", onPress: () => resolve("") }
+            ]
+          ))
+        : undefined;
+      if (status === "rejected" && !rejectionReason?.trim()) return;
+      await api.patch(`/admin/organizations/${id}/status`, { status, rejectionReason });
       Alert.alert("Succès", `Structure ${status === "active" ? "validée" : "refusée"}.`);
       load();
     } catch (e) {
@@ -1829,32 +2229,469 @@ function AdminScreen() {
     }
   };
 
+  const decideReport = async (id, action) => {
+    const rejectionReason = action === "reject"
+      ? "Demande rejetée après vérification administrative."
+      : undefined;
+    try {
+      await api.patch(`/reports/${id}/confirm-status`, { action, rejectionReason });
+      Alert.alert("Succès", action === "approve" ? "Statut confirmé." : "Demande rejetée.");
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  const removeReport = async (id) => {
+    Alert.alert("Retirer le signalement", "Le signalement sera marqué comme retiré.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Retirer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.delete(`/reports/${id}`);
+            load();
+          } catch (e) {
+            Alert.alert("Erreur", errorMessage(e));
+          }
+        }
+      }
+    ]);
+  };
+
+  const createPost = () => {
+    setPostDraft({ title: "", summary: "", content: "" });
+    setPostComposerVisible(true);
+  };
+
+  const submitPost = async () => {
+    if (!postDraft.title.trim() || !postDraft.summary.trim() || !postDraft.content.trim()) {
+      Alert.alert("Champs obligatoires", "Renseignez le titre, le résumé et le contenu.");
+      return;
+    }
+    try {
+      await api.post("/blog", { ...postDraft, category: "Actualité" });
+      setPostComposerVisible(false);
+      Alert.alert("Succès", "Article créé.");
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  const deletePost = (id) => {
+    Alert.alert("Supprimer l'article", "Cette action est irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.delete(`/blog/${id}`);
+            load();
+          } catch (e) {
+            Alert.alert("Erreur", errorMessage(e));
+          }
+        }
+      }
+    ]);
+  };
+
+  const editUser = (user) => {
+    setSelectedUser(user);
+    setUserDraft({
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      organizationName: user.organizationName || "",
+      phone: user.phone || "",
+      address: user.address || "",
+      status: user.status || "active"
+    });
+  };
+
+  const saveUser = async () => {
+    try {
+      await api.patch(`/admin/users/${selectedUser._id}`, userDraft);
+      setSelectedUser(null);
+      setUserDraft(null);
+      Alert.alert("Succès", "Utilisateur mis à jour.");
+      load();
+    } catch (e) {
+      Alert.alert("Erreur", errorMessage(e));
+    }
+  };
+
+  const removeUser = (user) => {
+    Alert.alert("Retirer l'utilisateur", "Le compte sera désactivé sans supprimer ses historiques.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Retirer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.delete(`/admin/users/${user._id}`);
+            Alert.alert("Succès", "Utilisateur retiré.");
+            load();
+          } catch (e) {
+            Alert.alert("Erreur", errorMessage(e));
+          }
+        }
+      }
+    ]);
+  };
+
+  const tabs = [
+    ["overview", "Vue d'ensemble"],
+    ["organizations", "Organisations"],
+    ["reports", "Signalements"],
+    ["donations", "Dons"],
+    ["users", "Utilisateurs"],
+    ["blog", "Blog"]
+  ];
+
   return (
     <ScrollView contentContainerStyle={styles.scrollPage} showsVerticalScrollIndicator={false}>
-      <Text style={styles.sectionHeaderTitle}>Administration Solid'Aid</Text>
-      {stats && (
-        <View style={styles.kpiGrid}>
-          <StatCard title="Utilisateurs" value={stats.users} icon="people" />
-          <StatCard title="Organisations" value={pending.length} icon="shield" color={colors.alert} />
-        </View>
-      )}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <Text style={styles.sectionHeaderTitle}>Administration Solid'Aid</Text>
+        <Pressable onPress={load} disabled={loading}>
+          <Ionicons name="refresh" size={22} color={colors.primary} />
+        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 12 }}>
+        {tabs.map(([id, label]) => (
+          <Pressable
+            key={id}
+            onPress={() => setSection(id)}
+            style={[styles.filterChipItem, section === id && styles.filterChipItemActive]}
+          >
+            <Text style={[styles.filterChipText, section === id && styles.filterChipTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {error ? <Text style={{ color: colors.danger, marginBottom: 10 }}>{error}</Text> : null}
+      {loading && <Text style={styles.bodyMuted}>Actualisation des données...</Text>}
 
-      <Text style={[styles.sectionHeaderTitle, { marginTop: 16 }]}>Organisations en attente de validation</Text>
-      {pending.map((org) => (
-        <View key={org._id} style={styles.priorityCard}>
-          <Text style={styles.priorityCardTitle}>{org.organizationName || org.email}</Text>
-          <Text style={styles.priorityCardAddress}>Rôle : {org.role} · SIREN : {org.sirenSiret || "—"}</Text>
-          <Text style={styles.bodyMuted}>Email : {org.email} · Tél : {org.phone || "—"}</Text>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-            <PrimaryButton title="Valider" onPress={() => setStatus(org._id, "active")} style={{ flex: 1 }} />
-            <PrimaryButton title="Refuser" variant="danger" onPress={() => setStatus(org._id, "rejected")} style={{ flex: 1 }} />
+      {section === "overview" && stats && (
+        <View>
+          <Text style={{ color: colors.textSecondary, marginBottom: 10 }}>
+            Supervision de la plateforme · {new Date().toLocaleDateString("fr-FR")}
+          </Text>
+          <View style={styles.kpiGrid}>
+          <StatCard title="Utilisateurs" value={stats.users} icon="people" />
+          <StatCard title="Citoyens" value={stats.citizens} icon="person" />
+          <StatCard title="Associations" value={stats.associations} icon="people-circle" color={colors.info} />
+          <StatCard title="Restaurants" value={stats.restaurants} icon="restaurant" color={colors.info} />
+          <StatCard title="Signalements" value={stats.reports} icon="map" color={colors.danger} />
+          <StatCard title="Nouveaux" value={stats.newReports} icon="alert-circle" color={colors.alert} />
+          <StatCard title="En cours" value={stats.inProgressReports} icon="time" color={colors.alert} />
+          <StatCard title="Résolus" value={stats.resolvedReports} icon="checkmark-circle" color={colors.success} />
+          <StatCard title="À valider" value={stats.pendingOrganizations} icon="shield" color={colors.alert} />
+          <StatCard title="Statuts en attente" value={stats.pendingStatusReports} icon="time" color={colors.alert} />
+          <StatCard title="Dons" value={stats.donations} icon="storefront" color={colors.success} />
+          <StatCard title="Dons affectés" value={stats.assignedDonations} icon="arrow-forward-circle" color={colors.info} />
+          <StatCard title="Dons collectés" value={stats.collectedDonations} icon="checkmark-done" color={colors.success} />
           </View>
         </View>
-      ))}
-
-      {pending.length === 0 && (
-        <Text style={styles.bodyMuted}>Aucune organisation en attente de vérification.</Text>
       )}
+
+      {section === "organizations" && (
+        <>
+          <Text style={styles.sectionHeaderTitle}>Organisations ({organizations.length})</Text>
+          {organizations.map((org) => (
+            <View key={org._id} style={styles.priorityCard}>
+              <Text style={styles.priorityCardTitle}>{org.organizationName || org.email}</Text>
+              <Text style={styles.priorityCardAddress}>Rôle : {org.role} · SIREN : {org.sirenSiret || "—"}</Text>
+              <Text style={styles.bodyMuted}>{org.email} · {org.phone || "Téléphone non renseigné"}</Text>
+              <Text style={{ color: org.status === "active" ? colors.success : org.status === "rejected" ? colors.danger : colors.alert, fontWeight: "800" }}>
+                {org.status === "active" ? "Approuvée" : org.status === "rejected" ? "Refusée" : "En attente"}
+              </Text>
+              {org.status === "pending" && <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <PrimaryButton title="Valider" onPress={() => setStatus(org._id, "active")} style={{ flex: 1 }} />
+                <PrimaryButton title="Refuser" variant="danger" onPress={() => setStatus(org._id, "rejected")} style={{ flex: 1 }} />
+              </View>}
+            </View>
+          ))}
+          {!organizations.length && <Text style={styles.bodyMuted}>Aucune organisation.</Text>}
+        </>
+      )}
+
+      {section === "reports" && (
+        <>
+          <Text style={styles.sectionHeaderTitle}>Modération des signalements ({reports.length})</Text>
+          <View style={styles.filterChipsRow}>
+            {[
+              ["", "Tous"],
+              ["new", "Nouveaux"],
+              ["in_progress", "En cours"],
+              ["resolved", "Résolus"],
+              ["pending", "À modérer"]
+            ].map(([value, label]) => (
+              <Pressable key={value || "all"} onPress={() => value === "pending" ? setPendingOnly((current) => !current) : (setPendingOnly(false), setReportStatus(value))} style={[styles.filterChipItem, (value === "pending" ? pendingOnly : reportStatus === value) && styles.filterChipItemActive]}>
+                <Text style={[styles.filterChipText, (value === "pending" ? pendingOnly : reportStatus === value) && styles.filterChipTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <InputField label="Recherche adresse ou description" value={search} onChangeText={setSearch} placeholder="Rechercher..." icon="search-outline" />
+          {reports.map((report) => (
+            <View key={report._id} style={styles.priorityCard}>
+              <View style={styles.priorityCardHeader}>
+                <Text style={styles.priorityCardTitle}>{report.type === "group" ? "Signalement groupe" : "Signalement individuel"}</Text>
+                <Text style={styles.bodyMuted}>{report.status}</Text>
+              </View>
+              <Text style={styles.priorityCardAddress}>{report.addressHint || "Localisation GPS"} · urgence {report.urgency}</Text>
+              {report.comment ? <Text style={styles.priorityCardComment}>« {report.comment} »</Text> : null}
+              <Pressable
+                onPress={() => setSelectedReport(report)}
+                style={{ marginTop: 10, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: colors.mintSoft }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: "800", fontSize: 12 }}>Voir tous les détails</Text>
+              </Pressable>
+              {report.pendingStatus?.status && (
+                <View style={{ marginTop: 8, padding: 8, backgroundColor: colors.mintSoft, borderRadius: 8 }}>
+                  <Text style={styles.bodyMuted}>Demande : {report.status} → {report.pendingStatus.status}</Text>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                    <PrimaryButton title="Approuver" onPress={() => decideReport(report._id, "approve")} style={{ flex: 1 }} />
+                    <PrimaryButton title="Rejeter" variant="danger" onPress={() => decideReport(report._id, "reject")} style={{ flex: 1 }} />
+                  </View>
+                </View>
+              )}
+              <Pressable onPress={() => removeReport(report._id)} style={{ marginTop: 10 }}>
+                <Text style={{ color: colors.danger, fontWeight: "700" }}>Retirer le signalement</Text>
+              </Pressable>
+            </View>
+          ))}
+        </>
+      )}
+
+      {section === "donations" && (
+        <>
+          <Text style={styles.sectionHeaderTitle}>Dons alimentaires ({donations.length})</Text>
+          {donations.map((donation) => (
+            <View key={donation._id} style={styles.priorityCard}>
+              <Text style={styles.priorityCardTitle}>{donation.description}</Text>
+              <Text style={styles.priorityCardAddress}>{donation.quantity} · {donation.status}</Text>
+              <Text style={styles.bodyMuted}>{donation.restaurant?.organizationName || donation.restaurant?.email || "Restaurateur"} · {donation.valuation?.estimatedValueEur || 0} EUR</Text>
+            </View>
+          ))}
+        </>
+      )}
+
+      {section === "users" && (
+        <>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={styles.sectionHeaderTitle}>Utilisateurs ({users.length})</Text>
+            <PrimaryButton title="Créer" onPress={() => setUserComposerVisible(true)} style={{ paddingHorizontal: 14 }} />
+          </View>
+          <InputField label="Rechercher un utilisateur" value={search} onChangeText={setSearch} placeholder="Email, nom, organisation..." icon="search-outline" />
+          {users.map((item) => (
+            <View key={item._id} style={styles.priorityCard}>
+              <Text style={styles.priorityCardTitle}>{item.organizationName || `${item.firstName || ""} ${item.lastName || ""}`.trim() || item.email}</Text>
+              <Text style={styles.priorityCardAddress}>{item.role} · {item.status}</Text>
+              <Text style={styles.bodyMuted}>{item.email}</Text>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <PrimaryButton title="Modifier" onPress={() => editUser(item)} style={{ flex: 1 }} />
+                {item.role !== "admin" && <PrimaryButton title="Retirer" variant="danger" onPress={() => removeUser(item)} style={{ flex: 1 }} />}
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      {section === "blog" && (
+        <>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={styles.sectionHeaderTitle}>Articles publiés ({posts.length})</Text>
+            <PrimaryButton title="Créer" onPress={createPost} style={{ paddingHorizontal: 14 }} />
+          </View>
+          {posts.map((post) => (
+            <View key={post._id} style={styles.priorityCard}>
+              <Text style={styles.priorityCardTitle}>{post.title}</Text>
+              <Text style={styles.bodyMuted}>{post.category} · {post.author}</Text>
+              <Text style={styles.priorityCardComment}>{post.summary}</Text>
+              <Pressable onPress={() => deletePost(post._id)} style={{ marginTop: 8 }}>
+                <Text style={{ color: colors.danger, fontWeight: "800" }}>Supprimer</Text>
+              </Pressable>
+            </View>
+          ))}
+        </>
+      )}
+
+      <Modal visible={!!selectedReport} animationType="slide" onRequestClose={() => setSelectedReport(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: "#FFFFFF" }}>
+            <Text style={styles.sectionHeaderTitle}>Détails du signalement</Text>
+            <Pressable onPress={() => setSelectedReport(null)} accessibilityLabel="Fermer les détails">
+              <Ionicons name="close-circle" size={28} color={colors.primaryDark} />
+            </Pressable>
+          </View>
+          {selectedReport && (
+            <ScrollView contentContainerStyle={{ padding: 18, gap: 14 }}>
+              <View style={styles.priorityCard}>
+                <Text style={styles.priorityCardTitle}>
+                  {selectedReport.type === "group" ? "Groupe de personnes" : "Personne seule"}
+                </Text>
+                <Text style={styles.priorityCardAddress}>
+                  Statut : {selectedReport.status} · Urgence : {selectedReport.urgency}
+                </Text>
+                <Text style={styles.bodyMuted}>
+                  Créé le {selectedReport.createdAt ? new Date(selectedReport.createdAt).toLocaleString("fr-FR") : "—"}
+                </Text>
+              </View>
+
+              {selectedReport.imageUrl ? (
+                <Image
+                  source={{ uri: selectedReport.imageUrl }}
+                  style={{ width: "100%", height: 210, borderRadius: 14, backgroundColor: colors.border }}
+                  resizeMode="cover"
+                />
+              ) : null}
+
+              <View style={styles.priorityCard}>
+                <Text style={styles.cardTitle}>Localisation</Text>
+                <Text style={styles.bodyMuted}>{selectedReport.addressHint || "Adresse non renseignée"}</Text>
+                <Text style={styles.bodyMuted}>
+                  GPS : {selectedReport.location?.coordinates?.[1] ?? "—"}, {selectedReport.location?.coordinates?.[0] ?? "—"}
+                </Text>
+              </View>
+
+              <View style={styles.priorityCard}>
+                <Text style={styles.cardTitle}>Description et besoins</Text>
+                <Text style={styles.bodyMuted}>{selectedReport.comment || "Aucune description."}</Text>
+                <Text style={styles.bodyMuted}>
+                  Besoins : {selectedReport.needs?.length ? selectedReport.needs.join(", ") : "Non renseignés"}
+                </Text>
+                {selectedReport.otherNeed ? <Text style={styles.bodyMuted}>Autre besoin : {selectedReport.otherNeed}</Text> : null}
+                {selectedReport.fulfilledNeeds?.length ? (
+                  <Text style={styles.bodyMuted}>Besoins couverts : {selectedReport.fulfilledNeeds.join(", ")}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.priorityCard}>
+                <Text style={styles.cardTitle}>Personne ou groupe</Text>
+                {selectedReport.type === "group" ? (
+                  <Text style={styles.bodyMuted}>
+                    Nombre : {selectedReport.group?.peopleCount || "—"} · Genre : {selectedReport.group?.majorityGender || "—"} · Âge moyen : {selectedReport.group?.averageAgeRange || "—"}
+                  </Text>
+                ) : (
+                  <Text style={styles.bodyMuted}>
+                    Genre apparent : {selectedReport.individual?.apparentGender || "—"} · Âge : {selectedReport.individual?.ageRange || "—"}
+                  </Text>
+                )}
+                {selectedReport.individual ? (
+                  <Text style={styles.bodyMuted}>
+                    Barrière linguistique : {selectedReport.individual.languageBarrier ? "Oui" : "Non"} · A demandé de l'aide : {selectedReport.individual.requestedHelp ? "Oui" : "Non"}
+                  </Text>
+                ) : null}
+              </View>
+
+              <View style={styles.priorityCard}>
+                <Text style={styles.cardTitle}>Acteurs et notes</Text>
+                <Text style={styles.bodyMuted}>
+                  Créateur : {selectedReport.isAnonymous ? "Signalement anonyme" : selectedReport.createdBy?.email || selectedReport.createdBy?.organizationName || "—"}
+                </Text>
+                <Text style={styles.bodyMuted}>
+                  Associations affectées : {selectedReport.assignedAssociations?.length
+                    ? selectedReport.assignedAssociations.map((association) => association.organizationName || association.email).join(", ")
+                    : "Aucune"}
+                </Text>
+                <Text style={styles.bodyMuted}>Note association : {selectedReport.associationNotes || "—"}</Text>
+                <Text style={styles.bodyMuted}>Note administration : {selectedReport.adminNotes || "—"}</Text>
+                <PrimaryButton title="Modifier les notes" onPress={() => editReport(selectedReport)} style={{ marginTop: 10 }} />
+              </View>
+
+              <View style={styles.priorityCard}>
+                <Text style={styles.cardTitle}>Historique des statuts</Text>
+                {selectedReport.statusChangeHistory?.length ? selectedReport.statusChangeHistory.map((entry, index) => (
+                  <Text key={`${entry.requestedAt || "history"}-${index}`} style={styles.bodyMuted}>
+                    {entry.decision === "approved" ? "Approuvé" : "Rejeté"} : {entry.proposedStatus} · {entry.requestedAt ? new Date(entry.requestedAt).toLocaleString("fr-FR") : "—"}
+                    {entry.rejectionReason ? ` · Motif : ${entry.rejectionReason}` : ""}
+                  </Text>
+                )) : <Text style={styles.bodyMuted}>Aucun historique de décision.</Text>}
+                {selectedReport.pendingStatus?.status ? (
+                  <Text style={{ color: colors.alert, fontWeight: "800", marginTop: 6 }}>
+                    Demande en attente : {selectedReport.status} → {selectedReport.pendingStatus.status}
+                  </Text>
+                ) : null}
+              </View>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={!!selectedUser} animationType="slide" onRequestClose={() => setSelectedUser(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, backgroundColor: "#FFFFFF" }}>
+            <Text style={styles.sectionHeaderTitle}>Modifier l'utilisateur</Text>
+            <Pressable onPress={() => setSelectedUser(null)}><Ionicons name="close-circle" size={28} color={colors.primaryDark} /></Pressable>
+          </View>
+          {userDraft && (
+            <ScrollView contentContainerStyle={{ padding: 18, gap: 10 }}>
+              <Text style={styles.bodyMuted}>{selectedUser.email} · {selectedUser.role}</Text>
+              <InputField label="Prénom" value={userDraft.firstName} onChangeText={(firstName) => setUserDraft((draft) => ({ ...draft, firstName }))} placeholder="Prénom" />
+              <InputField label="Nom" value={userDraft.lastName} onChangeText={(lastName) => setUserDraft((draft) => ({ ...draft, lastName }))} placeholder="Nom" />
+              <InputField label="Organisation" value={userDraft.organizationName} onChangeText={(organizationName) => setUserDraft((draft) => ({ ...draft, organizationName }))} placeholder="Organisation" />
+              <InputField label="Téléphone" value={userDraft.phone} onChangeText={(phone) => setUserDraft((draft) => ({ ...draft, phone }))} placeholder="Téléphone" />
+              <InputField label="Adresse" value={userDraft.address} onChangeText={(address) => setUserDraft((draft) => ({ ...draft, address }))} placeholder="Adresse" />
+              <View style={styles.filterChipsRow}>
+                {["active", "pending", "rejected"].map((status) => (
+                  <Pressable key={status} onPress={() => setUserDraft((draft) => ({ ...draft, status }))} style={[styles.filterChipItem, userDraft.status === status && styles.filterChipItemActive]}>
+                    <Text style={[styles.filterChipText, userDraft.status === status && styles.filterChipTextActive]}>{status}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <PrimaryButton title="Enregistrer" onPress={saveUser} />
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={postComposerVisible} animationType="slide" onRequestClose={() => setPostComposerVisible(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, backgroundColor: "#FFFFFF" }}>
+            <Text style={styles.sectionHeaderTitle}>Créer un article</Text>
+            <Pressable onPress={() => setPostComposerVisible(false)}><Ionicons name="close-circle" size={28} color={colors.primaryDark} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 18, gap: 12 }}>
+            <InputField label="Titre" value={postDraft.title} onChangeText={(title) => setPostDraft((draft) => ({ ...draft, title }))} placeholder="Titre de l'article" />
+            <InputField label="Résumé" value={postDraft.summary} onChangeText={(summary) => setPostDraft((draft) => ({ ...draft, summary }))} placeholder="Résumé court" multiline />
+            <InputField label="Contenu" value={postDraft.content} onChangeText={(content) => setPostDraft((draft) => ({ ...draft, content }))} placeholder="Contenu complet" multiline />
+            <PrimaryButton title="Publier l'article" onPress={submitPost} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={!!reportDraft} animationType="slide" onRequestClose={() => setReportDraft(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, backgroundColor: "#FFFFFF" }}>
+            <Text style={styles.sectionHeaderTitle}>Modifier le signalement</Text>
+            <Pressable onPress={() => setReportDraft(null)}><Ionicons name="close-circle" size={28} color={colors.primaryDark} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 18, gap: 12 }}>
+            <Text style={styles.bodyMuted}>Statut confirmé : {reportDraft?.status}</Text>
+            <InputField label="Notes de modération" value={reportDraft?.adminNotes || ""} onChangeText={(adminNotes) => setReportDraft((draft) => ({ ...draft, adminNotes }))} placeholder="Notes internes..." multiline />
+            <InputField label="Besoins couverts (séparés par des virgules)" value={(reportDraft?.fulfilledNeeds || []).join(", ")} onChangeText={(value) => setReportDraft((draft) => ({ ...draft, fulfilledNeeds: value.split(",").map((item) => item.trim()).filter(Boolean) }))} placeholder="food, shelter" />
+            <PrimaryButton title="Enregistrer" onPress={saveReport} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+      <Modal visible={userComposerVisible} animationType="slide" onRequestClose={() => setUserComposerVisible(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, backgroundColor: "#FFFFFF" }}>
+            <Text style={styles.sectionHeaderTitle}>Créer un utilisateur</Text>
+            <Pressable onPress={() => setUserComposerVisible(false)}><Ionicons name="close-circle" size={28} color={colors.primaryDark} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 18, gap: 12 }}>
+            <InputField label="E-mail" value={newUserDraft.email} onChangeText={(email) => setNewUserDraft((draft) => ({ ...draft, email }))} placeholder="email@exemple.fr" keyboardType="email-address" />
+            <InputField label="Mot de passe" value={newUserDraft.password} onChangeText={(password) => setNewUserDraft((draft) => ({ ...draft, password }))} placeholder="8 caractères minimum" secureTextEntry />
+            <View style={styles.filterChipsRow}>
+              {["citizen", "association", "restaurant"].map((role) => (
+                <Pressable key={role} onPress={() => setNewUserDraft((draft) => ({ ...draft, role }))} style={[styles.filterChipItem, newUserDraft.role === role && styles.filterChipItemActive]}>
+                  <Text style={[styles.filterChipText, newUserDraft.role === role && styles.filterChipTextActive]}>{role}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <PrimaryButton title="Créer l'utilisateur" onPress={createUser} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -1867,6 +2704,43 @@ function ProfileModal({ visible, user, updateUser, logout, close }) {
   const [subTab, setSubTab] = useState("info"); // "info" | "security" | "legal"
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const { keyboardHeight } = useKeyboard();
+  const profileScrollRef = useRef(null);
+  const profileFieldY = useRef({});
+
+  const registerProfileLayout = (key) => (e) => {
+    profileFieldY.current[key] = e.nativeEvent.layout.y;
+  };
+
+  const scrollToProfileField = (key) => {
+    const y = profileFieldY.current[key];
+    if (typeof y === "number" && profileScrollRef.current) {
+      setTimeout(() => {
+        profileScrollRef.current?.scrollTo({
+          y: Math.max(0, y - 50),
+          animated: true
+        });
+      }, 100);
+    }
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleBack = () => {
+      if (privacyOpen) {
+        setPrivacyOpen(false);
+        return true;
+      }
+      if (deleteConfirm) {
+        setDeleteConfirm(false);
+        return true;
+      }
+      close();
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => sub.remove();
+  }, [visible, deleteConfirm, privacyOpen, close]);
 
   // Profil & Coordonnées
   const [email, setEmail] = useState(user.email || "");
@@ -1903,13 +2777,8 @@ function ProfileModal({ visible, user, updateUser, logout, close }) {
   // Choisir un avatar depuis la galerie
   const pickAvatar = async () => {
     try {
-      const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!p.granted) {
-        Alert.alert("Permission requise", "Autorisez l'accès à la galerie pour modifier votre photo.");
-        return;
-      }
       const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.6,
@@ -1991,7 +2860,7 @@ function ProfileModal({ visible, user, updateUser, logout, close }) {
     try {
       await api.delete("/auth/me");
       await logout();
-      Alert.alert("Compte supprimé", "Votre compte et vos données ont été définitivement supprimés.");
+      Alert.alert("Compte supprimé", "Votre compte, ses signalements et ses dons associés ont été supprimés.");
       close();
     } catch (e) {
       Alert.alert("Erreur", errorMessage(e));
@@ -2001,14 +2870,27 @@ function ProfileModal({ visible, user, updateUser, logout, close }) {
   return (
     <Modal visible={visible} animationType="slide">
       <SafeAreaView style={styles.modalSafeArea}>
-        <View style={styles.modalTopNav}>
-          <Pressable onPress={close} style={styles.modalCloseBtn}>
-            <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
-          </Pressable>
-          <Text style={styles.modalHeaderTitle}>Mon compte & Paramètres</Text>
-        </View>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalTopNav}>
+            <Pressable onPress={close} style={styles.modalCloseBtn}>
+              <Ionicons name="arrow-back" size={24} color={colors.primaryDark} />
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Mon compte & Paramètres</Text>
+          </View>
 
-        <ScrollView contentContainerStyle={styles.modalScrollBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={profileScrollRef}
+            contentContainerStyle={[
+              styles.modalScrollBody,
+              { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 60 }
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
           {/* Hero Profil avec Photo modifiable */}
           <View style={styles.profileHeroBox}>
             <View style={{ position: "relative" }}>
@@ -2254,6 +3136,7 @@ function ProfileModal({ visible, user, updateUser, logout, close }) {
         )}
 
         <PrivacyModal visible={privacyOpen} close={() => setPrivacyOpen(false)} />
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -2289,19 +3172,20 @@ function PrivacyModal({ visible, close }) {
             <Text style={styles.bodyMuted}>
               • Géolocalisation : utilisée uniquement lors d'un signalement ou pour définir la zone d'action associative. Aucun suivi en arrière-plan.{"\n"}
               • Caméra & Photos : utilisées facultativement pour illustrer une situation observée ou un don d'invendus.{"\n"}
-              • Compte : e-mail et coordonnées d'accès chiffrées en HTTPS/TLS.
+              • Compte : e-mail, nom, téléphone, adresse et informations de structure. Les mots de passe sont hachés.
+              • Signalements et dons : commentaires, photos facultatives, coordonnées et informations de prise en charge.
             </Text>
           </View>
           <View style={styles.kpiCard}>
             <Text style={styles.cardTitle}>2. Partage et protection</Text>
             <Text style={styles.bodyMuted}>
-              Aucune donnée n'est commercialisée ou transmise à des régies publicitaires. Les signalements sont uniquement accessibles aux associations humanitaires habilitées du secteur géographique concerné.
+              Les signalements sont transmis aux associations qui leur sont affectées. Les informations de contact peuvent être partagées pour coordonner la prise en charge. Aucun SDK publicitaire n'est intégré au code examiné.
             </Text>
           </View>
           <View style={styles.kpiCard}>
             <Text style={styles.cardTitle}>3. Suppression de compte</Text>
             <Text style={styles.bodyMuted}>
-              Vous pouvez à tout moment supprimer votre compte directement dans l'application ou sur notre page web officielle : /delete-account.
+              La suppression dans l'application efface votre compte, ses signalements et ses dons associés. Sur le Web, demandez un lien de confirmation envoyé à l'adresse du compte. Des journaux de sécurité anonymisés et des sauvegardes à durée limitée peuvent subsister.
             </Text>
           </View>
           <PrimaryButton title="Fermer" onPress={close} style={{ marginTop: 12 }} />
@@ -2347,7 +3231,7 @@ const styles = StyleSheet.create({
   },
   scrollPage: {
     padding: 18,
-    paddingBottom: 110,
+    paddingBottom: Platform.select({ android: 125, ios: 125, default: 100 }),
     gap: 16,
     width: "100%",
     maxWidth: 680,
@@ -2421,18 +3305,15 @@ const styles = StyleSheet.create({
   buttonTextSecondary: { color: colors.primary },
 
   // 4 Feature Cards (Pastel Screen 1) - Responsive Flex Basis
-  featureGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  featureGrid: { flexDirection: "row", flexWrap: "wrap", rowGap: 10, columnGap: 8, justifyContent: "space-between" },
   featureCard: {
-    flexGrow: 1,
-    flexBasis: "46%",
-    minWidth: 120,
-    maxWidth: "49%",
+    width: "48%",
     borderRadius: 18,
     padding: 12,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
-    minHeight: 92
+    minHeight: 96
   },
   featureIconCircle: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 2 },
   featureCardTitle: { fontSize: 13, fontWeight: "800", color: colors.primaryDark },
@@ -2476,28 +3357,34 @@ const styles = StyleSheet.create({
   inputField: { flex: 1, fontSize: 14, color: colors.primaryDark, paddingVertical: 10 },
   eyeIcon: { padding: 4 },
 
-  // KPI Grid - Responsive Flex Basis
-  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  // KPI Grid - Responsive Flex Basis & Symmetrical Margins
+  kpiGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 10,
+    columnGap: 8,
+    marginVertical: 4
+  },
   kpiCard: {
-    flexGrow: 1,
-    flexBasis: "46%",
-    minWidth: 120,
-    maxWidth: "49%",
+    width: "48%",
+    minHeight: 124,
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 8,
+    justifyContent: "space-between",
     shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2
   },
   kpiIconBox: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  kpiValue: { fontSize: 24, fontWeight: "900" },
-  kpiTitle: { fontSize: 12, fontWeight: "800", color: colors.primaryDark },
-  kpiSubtitle: { fontSize: 10, color: colors.textMuted },
+  kpiValue: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
+  kpiTitle: { fontSize: 13, fontWeight: "800", color: colors.primaryDark, marginTop: 4 },
+  kpiSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
 
   // Welcome Hero
   welcomeHeroCard: {
@@ -2582,7 +3469,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
-    textAlign: "center",
     gap: 8
   },
   citizenActionTitle: { fontSize: 16, fontWeight: "900", color: colors.primaryDark },
@@ -2750,7 +3636,7 @@ const styles = StyleSheet.create({
   userNamePill: { fontSize: 12, fontWeight: "800", color: colors.primaryDark, maxWidth: 110 },
   userRolePill: { fontSize: 9, color: colors.primary, fontWeight: "700" },
 
-  // Bottom Tab Bar (Match Mockup Style) - Responsive Centering
+  // Bottom Tab Bar (Match Mockup Style) - Responsive Spacing Android & iOS
   bottomTabBar: {
     position: "absolute",
     bottom: 0,
@@ -2760,7 +3646,7 @@ const styles = StyleSheet.create({
     maxWidth: 680,
     alignSelf: "center",
     marginHorizontal: "auto",
-    height: 72,
+    height: Platform.select({ android: 78, ios: 84, default: 72 }),
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -2768,10 +3654,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
     paddingHorizontal: 8,
-    paddingBottom: 6,
-    zIndex: 10
+    paddingTop: 6,
+    paddingBottom: Platform.select({ android: 14, ios: 22, default: 8 }),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 10,
+    zIndex: 100
   },
-  tabBarItem: { alignItems: "center", justifyContent: "center", gap: 3, minWidth: 54 },
+  tabBarItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    paddingVertical: 4
+  },
   tabBarText: { fontSize: 10, color: colors.textMuted, fontWeight: "700" },
   tabBarTextActive: { color: colors.primary, fontWeight: "800" },
   centerFloatingButton: {
@@ -2781,11 +3679,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    top: -12,
+    marginTop: -22,
     shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    elevation: 6
+    elevation: 8
   },
 
   // Map Filter Bar
@@ -2833,9 +3732,9 @@ const styles = StyleSheet.create({
   imageZoomBadge: { position: "absolute", bottom: 8, right: 8, flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(6,61,46,0.85)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   imageZoomBadgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   reportActionRow: { flexDirection: "row", gap: 8, marginTop: 8 },
-  takeActionBtn: { flex: 1, backgroundColor: colors.mintSoft, paddingVertical: 9, borderRadius: 10, alignItems: "center" },
+  takeActionBtn: { flex: 1, backgroundColor: colors.mintSoft, paddingVertical: 10, minHeight: 44, justifyContent: "center", borderRadius: 10, alignItems: "center" },
   takeActionBtnText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
-  resolveActionBtn: { flex: 1, backgroundColor: colors.primary, paddingVertical: 9, borderRadius: 10, alignItems: "center" },
+  resolveActionBtn: { flex: 1, backgroundColor: colors.primary, paddingVertical: 10, minHeight: 44, justifyContent: "center", borderRadius: 10, alignItems: "center" },
   resolveActionBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
 
   // Donations
@@ -2877,7 +3776,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     alignItems: "center",
-    textAlign: "center",
     gap: 10,
     width: "100%",
     maxWidth: 480
@@ -2946,10 +3844,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between"
   },
   emergencyNumCard: {
-    flexGrow: 1,
-    flexBasis: "46%",
-    minWidth: 120,
-    maxWidth: "49%",
+    width: "48%",
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     padding: 14,
@@ -2986,3 +3881,4 @@ const styles = StyleSheet.create({
     textAlign: "center"
   }
 });
+
