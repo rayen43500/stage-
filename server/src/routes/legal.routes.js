@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { AccountDeletionRequest } from "../models/AccountDeletionRequest.js";
@@ -6,7 +6,7 @@ import { User } from "../models/User.js";
 import { sendMail } from "../services/mailer.js";
 import { permanentlyDeleteAccount } from "./auth.routes.js";
 
-const router = Router();
+const router = asyncRouter();
 const deletionRequestWindows = new Map();
 
 router.get("/privacy", (req, res) => {

@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import { z } from "zod";
+import { imageField } from "../utils/validators.js";
 import { auth, requireRole, requireValidatedOrganization } from "../middleware/auth.js";
 import { FoodDonation } from "../models/FoodDonation.js";
 import { User } from "../models/User.js";
@@ -7,15 +8,15 @@ import { estimateDonationValue } from "../services/valuation.js";
 import { sendMail } from "../services/mailer.js";
 import { distanceMeters } from "../services/routing.js";
 
-const router = Router();
+const router = asyncRouter();
 router.use(auth, requireValidatedOrganization);
 
 const donationSchema = z.object({
-  description: z.string().min(3),
-  quantity: z.string().min(1),
-  photoUrl: z.string().optional(),
+  description: z.string().trim().min(3).max(1000),
+  quantity: z.string().trim().min(1).max(100),
+  photoUrl: imageField(),
   availableDate: z.coerce.date(),
-  pickupSlots: z.array(z.object({ start: z.string(), end: z.string() })).default([])
+  pickupSlots: z.array(z.object({ start: z.string().max(20), end: z.string().max(20) })).max(10).default([])
 });
 
 router.post("/", requireRole("restaurant"), async (req, res) => {
@@ -114,6 +115,7 @@ router.get("/", async (req, res) => {
 // Restaurateur: only shows summary if requested year is complete or it's December
 router.get("/annual-summary/:year", requireRole("restaurant", "association", "admin"), async (req, res) => {
   const year = Number(req.params.year);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ message: "Annee invalide." });
   const currentYear = new Date().getFullYear();
   const isCurrentYear = year === currentYear;
   const isDecember = new Date().getMonth() === 11;

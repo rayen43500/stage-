@@ -5,10 +5,12 @@ Ce document décrit la configuration présente dans le dépôt. Il ne prouve pas
 ## Configuration Android observée
 
 - Package configuré : `fr.solidaid.app`.
-- Version : `1.0.0`, `versionCode: 3` (à incrémenter si la Console indique un code égal ou supérieur).
-- Target API configurée : 36.
+- Version : `1.0.0`, `versionCode: 4` (à incrémenter à chaque nouvel envoi en Console).
+- Target API / compile SDK : 36, configurés via le plugin `expo-build-properties` (vérifié dans le manifeste généré par `expo prebuild`).
+- `android:allowBackup="false"` et `usesCleartextTraffic="false"` : pas de sauvegarde cloud des données de session, pas de trafic HTTP non chiffré.
 - Profil EAS production : AAB (`app-bundle`).
-- Permissions prévues : localisation approximative/précise au premier plan et caméra. Les permissions médias générales et enregistrement audio sont bloquées/supprimées ; les sélections d'images utilisent le picker système.
+- Permissions du manifeste final : `INTERNET`, `VIBRATE`, `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION` (premier plan uniquement), `CAMERA`. Sont explicitement retirées (`tools:node="remove"`) : stockage externe, `READ_MEDIA_*`, `RECORD_AUDIO`, `ACCESS_BACKGROUND_LOCATION`, `SYSTEM_ALERT_WINDOW`. Les photos utilisent le Photo Picker système.
+- Jeton de session stocké chiffré (Android Keystore via `expo-secure-store`).
 - Le dépôt ne contient pas de résultat de build signé. Vérifier dans l'AAB la cible SDK, le manifeste fusionné, la signature, le package et Play App Signing avant téléversement.
 
 ## Déclarations Play Console à effectuer
@@ -46,8 +48,16 @@ Depuis `client` : `npx eas build --platform android --profile production`. Véri
 - `PUBLIC_BASE_URL` : URL HTTPS publique du backend, sans slash final.
 - Confirmer avec l'hébergeur les régions, sauvegardes, durées de rétention et sous-traitants afin de finaliser la politique et Data Safety.
 
+## Sécurité (à indiquer dans Data Safety)
+
+- Données chiffrées en transit : oui (HTTPS uniquement, trafic en clair désactivé dans l'app, HSTS côté API).
+- Suppression des données sur demande : oui (dans l'app et via la page Web `/delete-account`).
+- Protections API : limitation de débit (connexion, inscription, signalements anonymes), validation stricte des entrées (zod), protection contre l'injection NoSQL, JWT HS256 avec secret ≥ 32 caractères, mots de passe bcrypt.
+- **Action obligatoire** : un identifiant MongoDB Atlas a été publié dans l'historique git (`server/.env.example`). Changer ce mot de passe dans Atlas et mettre à jour `MONGODB_URI` sur Render.
+
 ## Checklist avant soumission
 
+- [ ] Changer le mot de passe MongoDB Atlas exposé et mettre à jour `MONGODB_URI` sur Render.
 - [ ] Déployer et vérifier les variables serveur requises, SMTP, HTTPS, CORS et base de production.
 - [ ] Tester la suppression in-app et le lien Web de bout en bout avec un compte de test, y compris les données associées.
 - [ ] Créer des comptes de démonstration pour l'examen.

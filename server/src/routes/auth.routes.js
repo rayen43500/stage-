@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import { z } from "zod";
+import { imageField } from "../utils/validators.js";
 import { User } from "../models/User.js";
 import { signToken } from "../services/token.js";
 import { auth } from "../middleware/auth.js";
@@ -9,29 +10,29 @@ import { FoodDonation } from "../models/FoodDonation.js";
 import { AuditLog } from "../models/AuditLog.js";
 import mongoose from "mongoose";
 
-const router = Router();
+const router = asyncRouter();
 
 const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(8).max(128),
   role: z.enum(["citizen", "association", "restaurant"]).default("citizen"),
   consentRgpd: z.literal(true),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  prenom: z.string().optional(),
-  nom: z.string().optional(),
-  organizationName: z.string().optional(),
-  sirenSiret: z.string().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  services: z.array(z.string()).optional(),
+  firstName: z.string().trim().max(100).optional(),
+  lastName: z.string().trim().max(100).optional(),
+  prenom: z.string().trim().max(100).optional(),
+  nom: z.string().trim().max(100).optional(),
+  organizationName: z.string().trim().max(200).optional(),
+  sirenSiret: z.string().trim().max(20).optional(),
+  phone: z.string().trim().max(40).optional(),
+  address: z.string().trim().max(300).optional(),
+  services: z.array(z.enum(["hygiene", "clothes", "food", "shelter", "health", "psychological", "other"])).max(7).optional(),
   interventionZone: z
     .object({
-      center: z.object({ coordinates: z.tuple([z.number(), z.number()]) }),
+      center: z.object({ coordinates: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]) }),
       radiusKm: z.number().min(0).max(100)
     })
     .optional(),
-  helloAssoUrl: z.string().url().optional()
+  helloAssoUrl: z.string().url().max(500).regex(/^https:\/\//i).optional()
 });
 
 router.post("/register", async (req, res) => {
@@ -85,7 +86,7 @@ router.post("/register", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const data = z.object({ email: z.string().email(), password: z.string() }).parse(req.body);
+  const data = z.object({ email: z.string().trim().toLowerCase().email().max(254), password: z.string().min(1).max(128) }).parse(req.body);
   const user = await User.findOne({ email: data.email, deletedAt: { $exists: false } });
   if (!user || !(await user.comparePassword(data.password))) return res.status(401).json({ message: "Identifiants invalides." });
   res.json({ token: signToken(user), user: sanitize(user) });
@@ -94,14 +95,15 @@ router.post("/login", async (req, res) => {
 router.get("/me", auth, (req, res) => res.json({ user: req.user }));
 
 const profileUpdateSchema = z.object({
-  email: z.string().email().optional(),
-  organizationName: z.string().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  avatarUrl: z.string().optional(),
-  services: z.array(z.string()).optional(),
+  email: z.string().trim().email().max(254).optional(),
+  organizationName: z.string().max(200).optional(),
+  phone: z.string().max(40).optional(),
+  address: z.string().max(300).optional(),
+  // Avatar: empty, HTTPS URL or base64 image data URI (max ~3 MB).
+  avatarUrl: imageField(4_000_000, { allowEmpty: true }),
+  services: z.array(z.enum(["hygiene", "clothes", "food", "shelter", "health", "psychological", "other"])).max(7).optional(),
   radiusKm: z.number().min(1).max(100).optional(),
-  helloAssoUrl: z.string().optional()
+  helloAssoUrl: z.string().max(500).refine((v) => v === "" || /^https:\/\/\S+$/i.test(v), "URL HTTPS requise.").optional()
 });
 
 router.patch("/profile", auth, async (req, res) => {
@@ -135,8 +137,8 @@ router.patch("/profile", auth, async (req, res) => {
 });
 
 const passwordChangeSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8)
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128)
 });
 
 router.patch("/password", auth, async (req, res) => {

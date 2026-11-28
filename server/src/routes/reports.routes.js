@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import { z } from "zod";
+import { imageField } from "../utils/validators.js";
 import { auth, requireRole, requireValidatedOrganization } from "../middleware/auth.js";
 import { Report } from "../models/Report.js";
 import { User } from "../models/User.js";
@@ -7,13 +8,13 @@ import { findMatchingAssociations } from "../services/routing.js";
 import { sendMail } from "../services/mailer.js";
 import { recordAudit } from "../services/audit.js";
 
-const router = Router();
+const router = asyncRouter();
 
 const quickReportSchema = z.object({
-  coordinates: z.tuple([z.number(), z.number()]),
-  addressHint: z.string().optional(),
-  comment: z.string().optional(),
-  imageUrl: z.string().optional(),
+  coordinates: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]),
+  addressHint: z.string().max(300).optional(),
+  comment: z.string().max(2000).optional(),
+  imageUrl: imageField(),
   urgency: z.enum(["green", "yellow", "red"]).default("yellow"),
   needs: z.array(z.enum(["hygiene", "clothes", "food", "shelter", "health", "psychological", "other"])).default([])
 });
@@ -60,13 +61,13 @@ router.use(auth, requireValidatedOrganization);
 
 const reportSchema = z.object({
   type: z.enum(["individual", "group"]),
-  coordinates: z.tuple([z.number(), z.number()]),
-  addressHint: z.string().optional(),
-  comment: z.string().optional(),
-  imageUrl: z.string().optional(),
+  coordinates: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]),
+  addressHint: z.string().max(300).optional(),
+  comment: z.string().max(2000).optional(),
+  imageUrl: imageField(),
   urgency: z.enum(["green", "yellow", "red"]),
   needs: z.array(z.enum(["hygiene", "clothes", "food", "shelter", "health", "psychological", "other"])).default([]),
-  otherNeed: z.string().optional(),
+  otherNeed: z.string().max(300).optional(),
   individual: z.record(z.any()).optional(),
   group: z.record(z.any()).optional()
 });
@@ -155,9 +156,9 @@ router.get("/", async (req, res) => {
 router.patch("/:id", requireRole("association", "admin"), async (req, res) => {
   const updateSchema = z.object({
     status: z.enum(["new", "in_progress", "resolved", "removed"]).optional(),
-    fulfilledNeeds: z.array(z.string()).optional(),
-    associationNotes: z.string().optional(),
-    adminNotes: z.string().optional()
+    fulfilledNeeds: z.array(z.string().max(50)).max(20).optional(),
+    associationNotes: z.string().max(2000).optional(),
+    adminNotes: z.string().max(2000).optional()
   });
   const update = updateSchema.parse(req.body);
   const filter = { _id: req.params.id };
@@ -301,7 +302,7 @@ router.patch("/:id/confirm-status", requireRole("admin"), async (req, res) => {
 router.delete("/:id", requireRole("admin"), async (req, res) => {
   const report = await Report.findByIdAndUpdate(
     req.params.id,
-    { $set: { status: "removed", adminNotes: req.body?.reason || "Retiré par un administrateur." } },
+    { $set: { status: "removed", adminNotes: typeof req.body?.reason === "string" ? req.body.reason.slice(0, 1000) : "Retiré par un administrateur." } },
     { new: true, runValidators: true }
   );
   if (!report) return res.status(404).json({ message: "Signalement introuvable." });

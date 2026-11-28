@@ -28,3 +28,7 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local MongoDB data
+.mongo/
+server/.mongo/

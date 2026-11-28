@@ -1,9 +1,9 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import { z } from "zod";
 import { BlogPost } from "../models/BlogPost.js";
 import { auth, requireRole } from "../middleware/auth.js";
 
-const router = Router();
+const router = asyncRouter();
 
 // GET /api/blog — Get all published blog posts (public)
 router.get("/", async (req, res) => {

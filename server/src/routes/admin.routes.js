@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { asyncRouter } from "../utils/asyncRouter.js";
 import { z } from "zod";
 import { auth, requireRole } from "../middleware/auth.js";
 import { User } from "../models/User.js";
@@ -9,7 +9,7 @@ import { AuditLog } from "../models/AuditLog.js";
 import { recordAudit } from "../services/audit.js";
 import { permanentlyDeleteAccount } from "./auth.routes.js";
 
-const router = Router();
+const router = asyncRouter();
 router.use(auth, requireRole("admin"));
 
 // Global dashboard stats
@@ -259,6 +259,7 @@ router.post("/donations/:restaurantId/fiscal-receipt/:year", async (req, res) =>
   }
 
   const year = Number(req.params.year);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ message: "Annee invalide." });
   const start = new Date(`${year}-01-01T00:00:00.000Z`);
   const end = new Date(`${year + 1}-01-01T00:00:00.000Z`);
 

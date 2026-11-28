@@ -27,3 +27,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local MongoDB data directory (never commit database files)
+.mongo/

@@ -20,6 +20,7 @@ import {
   View
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,9 +88,36 @@ const saveReport = async () => {
 
 const API_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://stage-cqe9.onrender.com/api";
-const api = axios.create({ baseURL: API_URL });
+const api = axios.create({ baseURL: API_URL, timeout: 30000 });
+
+// Session token: stored encrypted (Android Keystore / iOS Keychain) on mobile.
+// The web build has no secure storage, so it falls back to AsyncStorage.
+const TOKEN_KEY = "sos-link-token";
+const tokenStore = {
+  async get() {
+    if (Platform.OS === "web") return AsyncStorage.getItem(TOKEN_KEY);
+    const secure = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (secure) return secure;
+    // One-time migration of a token saved in clear text by older app versions.
+    const legacy = await AsyncStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      await SecureStore.setItemAsync(TOKEN_KEY, legacy);
+      await AsyncStorage.removeItem(TOKEN_KEY);
+    }
+    return legacy;
+  },
+  async set(token) {
+    if (Platform.OS === "web") return AsyncStorage.setItem(TOKEN_KEY, token);
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+  },
+  async clear() {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+    if (Platform.OS !== "web") await SecureStore.deleteItemAsync(TOKEN_KEY);
+  }
+};
+
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem("sos-link-token");
+  const token = await tokenStore.get();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -356,8 +384,8 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
       urgency: r.urgency || "yellow",
       status: r.status,
       address: r.addressHint || "Localisation GPS",
-      imageUrl: r.imageUrl || null,
-      comment: (r.comment || "").replace(/"/g, "&quot;").replace(/\n/g, " "),
+      imageUrl: typeof r.imageUrl === "string" && /^(https:\/\/|data:image\/(png|jpe?g|webp);base64,)/i.test(r.imageUrl) ? r.imageUrl : null,
+      comment: (r.comment || "").replace(/\n/g, " "),
       needs: (r.needs || []).map((n) => labels[n] || n).join(", ")
     }));
 
@@ -393,7 +421,8 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
 <body>
   <div id="map"></div>
   <script>
-    const reports = ${JSON.stringify(markersData)};
+    const reports = ${JSON.stringify(markersData).replace(/</g, "\\u003c")};
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const center = reports.length > 0 ? [reports[0].lat, reports[0].lng] : [48.8700, 2.3600];
     const map = L.map('map', { zoomControl: true }).setView(center, reports.length > 0 ? 14 : 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -416,18 +445,18 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
       const marker = L.marker([r.lat, r.lng], { icon }).addTo(map);
       bounds.push([r.lat, r.lng]);
       const statusLabel = r.status === 'resolved' ? 'Résolu' : r.status === 'in_progress' ? 'En cours' : 'Nouveau';
-      const gmapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + r.lat + ',' + r.lng;
+      const gmapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + Number(r.lat) + ',' + Number(r.lng);
       marker.bindPopup(
         '<div class="popup-header">' +
           '<span class="popup-title">' + (r.type === 'group' ? '👥 Groupe' : '👤 Personne seule') + '</span>' +
           '<span class="popup-badge" style="background:' + bg + ';">' + (r.urgency === 'red' ? 'Critique' : r.urgency === 'yellow' ? 'Important' : 'Stable') + '</span>' +
         '</div>' +
-        (r.imageUrl ? '<div style="margin:8px 0;border-radius:10px;overflow:hidden;height:120px;"><img src="' + r.imageUrl + '" style="width:100%;height:100%;object-fit:cover;" /></div>' : '') +
-        '<div class="popup-meta">📍 ' + r.address + '</div>' +
+        (r.imageUrl ? '<div style="margin:8px 0;border-radius:10px;overflow:hidden;height:120px;"><img src="' + esc(r.imageUrl) + '" style="width:100%;height:100%;object-fit:cover;" /></div>' : '') +
+        '<div class="popup-meta">📍 ' + esc(r.address) + '</div>' +
         '<div class="popup-meta">Statut : <b>' + statusLabel + '</b></div>' +
-        (r.comment ? '<div style="margin:4px 0;color:#334155;font-style:italic;">« ' + r.comment + ' »</div>' : '') +
-        (r.needs ? '<div class="popup-needs">Besoins : ' + r.needs + '</div>' : '') +
-        '<a href="' + gmapsUrl + '" target="_blank" class="popup-btn">🧭 Ouvrir Itinéraire GPS</a>'
+        (r.comment ? '<div style="margin:4px 0;color:#334155;font-style:italic;">« ' + esc(r.comment) + ' »</div>' : '') +
+        (r.needs ? '<div class="popup-needs">Besoins : ' + esc(r.needs) + '</div>' : '') +
+        '<a href="' + gmapsUrl + '" target="_blank" rel="noopener noreferrer" class="popup-btn">🧭 Ouvrir Itinéraire GPS</a>'
       );
     });
 
@@ -455,6 +484,8 @@ function ReportsMap({ reports = [], height = 340, isFull = false, onSelectReport
       >
         <iframe
           srcDoc={leafletHtml}
+          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+          referrerPolicy="no-referrer"
           style={{ width: "100%", height: "100%", minHeight: "100%", border: "none", display: "block" }}
           title="Carte interactive Solid'Aid"
         />
@@ -498,7 +529,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const token = await AsyncStorage.getItem("sos-link-token");
+      const token = await tokenStore.get().catch(() => null);
       const rawUser = await AsyncStorage.getItem("sos-link-user");
       if (token && rawUser) {
         try {
@@ -506,7 +537,8 @@ export default function App() {
           setSession({ token, user: data.user });
           await AsyncStorage.setItem("sos-link-user", JSON.stringify(data.user));
         } catch {
-          await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]);
+          await tokenStore.clear().catch(() => {});
+          await AsyncStorage.removeItem("sos-link-user");
         }
       }
       setReady(true);
@@ -514,10 +546,8 @@ export default function App() {
   }, []);
 
   const login = async (data) => {
-    await AsyncStorage.multiSet([
-      ["sos-link-token", data.token],
-      ["sos-link-user", JSON.stringify(data.user)]
-    ]);
+    await tokenStore.set(data.token);
+    await AsyncStorage.setItem("sos-link-user", JSON.stringify(data.user));
     setSession(data);
   };
 
@@ -527,7 +557,8 @@ export default function App() {
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove(["sos-link-token", "sos-link-user"]);
+    await tokenStore.clear().catch(() => {});
+    await AsyncStorage.removeItem("sos-link-user");
     setSession(null);
   };
 

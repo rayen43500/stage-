@@ -70,7 +70,12 @@ a:hover { text-decoration: underline; }
   display: inline-flex; align-items: center; gap: 8px;
   padding: 13px 26px; border-radius: 999px; font-weight: 600; transition: transform .2s, box-shadow .2s;
 }
-.btn:hover { text-decoration: none; transform: translateY(-2px); }
+.btn { position: relative; z-index: 1; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: rgba(21, 101, 216, .2); }
+.btn:hover { text-decoration: none; }
+.btn:active { transform: scale(.97); }
+@media (hover: hover) {
+  .btn:hover { transform: translateY(-2px); }
+}
 .btn-primary { background: #fff; color: var(--blue-dark); box-shadow: 0 8px 20px rgba(0, 0, 0, .15); }
 .btn-ghost { border: 2px solid rgba(255, 255, 255, .7); color: #fff; }
 .btn-grad { background: var(--grad); color: #fff; box-shadow: 0 8px 20px rgba(21, 101, 216, .25); }
@@ -106,7 +111,12 @@ h3 { color: var(--ink); font-size: 1.2rem; margin-bottom: 8px; font-weight: 600;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 30px 26px; box-shadow: var(--shadow); transition: transform .25s, box-shadow .25s;
 }
-.card:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(15, 31, 58, .12); }
+@media (hover: hover) {
+  .card:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(15, 31, 58, .12); }
+}
+a, button { touch-action: manipulation; }
+.hero::before, .step::before { pointer-events: none; }
+.hero-inner { z-index: 1; }
 .icon {
   width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center;
   font-size: 1.6rem; margin-bottom: 18px; color: #fff;
