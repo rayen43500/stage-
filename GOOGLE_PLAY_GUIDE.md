@@ -5,7 +5,7 @@ Ce document décrit la configuration présente dans le dépôt. Il ne prouve pas
 ## Configuration Android observée
 
 - Package configuré : `fr.solidaid.app`.
-- Version : `1.0.0`, `versionCode: 4` (à incrémenter à chaque nouvel envoi en Console).
+- Version : `1.0.1`, `versionCode: 4` dans `app.json`. Le profil EAS `production` a `autoIncrement: true` : chaque build AAB incrémente automatiquement le versionCode (5, 6, …) et met à jour `app.json` — commiter ce changement après chaque build.
 - Target API / compile SDK : 36, configurés via le plugin `expo-build-properties` (vérifié dans le manifeste généré par `expo prebuild`).
 - `android:allowBackup="false"` et `usesCleartextTraffic="false"` : pas de sauvegarde cloud des données de session, pas de trafic HTTP non chiffré.
 - Profil EAS production : AAB (`app-bundle`).
